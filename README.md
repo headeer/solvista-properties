@@ -1,0 +1,1 @@
+# solvista-properties
