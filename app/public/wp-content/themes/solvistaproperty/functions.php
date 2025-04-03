@@ -1,3 +1,8 @@
+<?php
+/**
+ * Theme functions and definitions
+ */
+
 // Register scripts and styles
 function solvista_enqueue_scripts()
 {
@@ -266,8 +271,9 @@ function solvista_get_properties($request)
 }
 
 // Register custom page templates
-function solvista_register_page_templates($templates) {
+function solvista_register_page_templates($templates)
+{
     $templates['page-templates/main-page.php'] = 'Main Page with Map';
     return $templates;
 }
-add_filter('theme_page_templates', 'solvista_register_page_templates'); 
+add_filter('theme_page_templates', 'solvista_register_page_templates');
