@@ -1,81 +1,139 @@
 // Property Search Map Script
-console.log('Property Search Map Script loaded');
 
 // SearchByMap Class
 class SearchByMap {
-    constructor() {
-        console.log('Creating new SearchByMap instance');
+    constructor(config = {}) {
+        this.config = {
+            apiUrl: '/wp-json/resales/v1/map-properties',
+            hasApiKey: true,
+            itemsPerPage: 10,
+            ...config
+        };
         this.map = null;
         this.markers = [];
-        this.markerCluster = null;
-        this.originalProperties = []; // Store original properties
-        this.properties = []; // This will be used for filtered properties
+        this.properties = [];
         this.currentPage = 1;
         this.totalPages = 1;
-        this.filters = {};
-        this.highlightedProperty = null;
-        this.propertyMarkers = {};
-        this.apiUrl = `${window.solvistaData?.baseUrl || ''}${window.solvistaData?.endpoints?.properties || ''}`;
-        this.apiKey = window.solvistaData?.apiKey || '';
-        this.itemsPerPage = 10;
-        console.log('SearchByMap instance created with config:', {
-            apiUrl: this.apiUrl,
-            hasApiKey: !!this.apiKey,
-            itemsPerPage: this.itemsPerPage
+        this.isLoading = false;
+        this.markerCluster = null;
+        this.initialized = false;
+        this.filters = new PropertyFilters();
+    }
+
+    initMap() {
+        const mapContainer = document.getElementById('map');
+        if (!mapContainer) {
+            throw new Error('Map container not found');
+        }
+
+        this.map = L.map('map', {
+            center: [40.4168, -3.7038],
+            zoom: 6,
+            zoomControl: true
+        });
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(this.map);
+
+        this.markerCluster = L.markerClusterGroup({
+            maxClusterRadius: 50,
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            zoomToBoundsOnClick: true
+        });
+        this.map.addLayer(this.markerCluster);
+    }
+
+    async loadScripts() {
+        const leafletCss = document.createElement('link');
+        leafletCss.rel = 'stylesheet';
+        leafletCss.href = 'https://unpkg.com/leaflet@1.7.1/dist/leaflet.css';
+        document.head.appendChild(leafletCss);
+        
+        const markerClusterCss = document.createElement('link');
+        markerClusterCss.rel = 'stylesheet';
+        markerClusterCss.href = 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css';
+        document.head.appendChild(markerClusterCss);
+        
+        const markerClusterDefaultCss = document.createElement('link');
+        markerClusterDefaultCss.rel = 'stylesheet';
+        markerClusterDefaultCss.href = 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css';
+        document.head.appendChild(markerClusterDefaultCss);
+        
+        await this.loadScript('https://unpkg.com/leaflet@1.7.1/dist/leaflet.js');
+        await this.loadScript('https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js');
+        await this.loadScript('/wp-content/themes/solvistaproperty/page-templates/fallback-data.js');
+    }
+
+    loadScript(src) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = () => resolve();
+            script.onerror = (error) => reject(error);
+            document.head.appendChild(script);
         });
     }
 
     async initialize() {
         if (this.initialized) {
-            console.log('SearchByMap already initialized');
             return;
         }
 
-        console.log('Starting SearchByMap initialization');
-        
         try {
-            // Wait for DOM to be ready
-            await new Promise(resolve => {
-                if (document.readyState === 'complete') {
-                    resolve();
-                } else {
-                    window.addEventListener('load', resolve);
-                }
-            });
-
-            // Check if required scripts are loaded
-            if (typeof L === 'undefined') {
-                throw new Error('Leaflet is not loaded');
-            }
-            
-            if (typeof L.markerClusterGroup === 'undefined') {
-                throw new Error('Leaflet.markercluster is not loaded');
-            }
-            
-            if (typeof FALLBACK_DATA === 'undefined') {
-                throw new Error('Fallback data is not loaded');
-            }
-
-            // Check if map container exists
-            const mapContainer = document.getElementById('map');
-            if (!mapContainer) {
-                throw new Error('Map container not found');
-            }
-
-            this.initialized = true;
-            console.log('Initializing SearchByMap class');
-            
-            // Setup map first
-            this.setupMap();
-            
-            // Then setup event listeners
-            this.setupEventListeners();
-            
-            // Finally load properties
+            await this.loadScripts();
+            this.initMap();
             await this.loadProperties();
+            await this.filters.init();
+            this.initialized = true;
         } catch (error) {
-            console.error('Failed to initialize SearchByMap:', error);
             throw error;
+        }
+    }
+
+    async loadProperties(page = 1) {
+        this.currentPage = page;
+        this.isLoading = true;
+
+        try {
+            const response = await fetch(this.config.apiUrl);
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (Array.isArray(data)) {
+                this.properties = data.map(property => ({
+                    id: property.reference,
+                    reference: property.reference,
+                    title: `Property ${property.reference}`,
+                    price: property.price,
+                    location: 'Location not specified',
+                    bedrooms: 0,
+                    bathrooms: 0,
+                    area: '0 m²',
+                    image: '/wp-content/themes/solvistaproperty/assets/images/placeholder.svg',
+                    status: 'For Sale',
+                    propertyType: 'Property',
+                    latitude: parseFloat(property.gps_y) || 0,
+                    longitude: parseFloat(property.gps_x) || 0,
+                    terrace: false,
+                    pool: false,
+                    garden: false,
+                    parking: false
+                }));
+                this.displayProperties();
+            } else {
+                this.useFallbackData();
+            }
+        } catch (error) {
+            this.useFallbackData();
+        } finally {
+            this.isLoading = false;
         }
     }
 
@@ -83,7 +141,7 @@ class SearchByMap {
         const mapContainer = document.getElementById('map');
         if (!mapContainer) {
             console.error('Map container not found');
-            return;
+          return;
         }
 
         // Set map container height to ensure visibility
@@ -192,75 +250,10 @@ class SearchByMap {
         });
     }
 
-    async loadProperties(page = 1) {
-        try {
-            console.log('Loading properties for page:', page);
-            
-            // Check if we have a valid API URL
-            if (!this.apiUrl) {
-                console.warn('No API URL configured, using fallback data');
-                this.useFallbackData();
-                return;
-            }
-
-            const response = await fetch(`${this.apiUrl}?page=${page}&per_page=${this.itemsPerPage}`, {
-                headers: {
-                    'Authorization': `Bearer ${this.apiKey}`,
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            // Check if response is JSON
-            const contentType = response.headers.get('content-type');
-            if (!contentType || !contentType.includes('application/json')) {
-                throw new Error('Response is not JSON');
-            }
-
-            const data = await response.json();
-            this.originalProperties = data.properties.map(property => ({
-                id: property.id,
-                title: property.title,
-                price: property.price,
-                location: property.location,
-                latitude: parseFloat(property.latitude),
-                longitude: parseFloat(property.longitude),
-                bedrooms: property.bedrooms,
-                bathrooms: property.bathrooms,
-                area: property.area,
-                image: property.image,
-                propertyType: property.propertyType,
-                status: property.status,
-                reference: property.reference,
-                currency: property.currency,
-                built: property.built,
-                plot: property.plot,
-                terrace: property.terrace,
-                pool: property.pool,
-                garden: property.garden,
-                parking: property.parking,
-                features: property.features,
-                pictures: property.pictures
-            })).filter(property => property.latitude && property.longitude);
-
-            // Initially set properties to all original properties
-            this.properties = [...this.originalProperties];
-            
-            this.totalPages = Math.ceil(data.total / this.itemsPerPage);
-            this.displayProperties();
-        } catch (error) {
-            console.error('Error loading properties:', error);
-            this.useFallbackData();
-        }
-    }
-
     useFallbackData() {
         if (typeof FALLBACK_DATA !== 'undefined') {
             console.log('Using fallback data:', FALLBACK_DATA);
-            this.originalProperties = FALLBACK_DATA.properties.map(property => ({
+            this.properties = FALLBACK_DATA.properties.map(property => ({
                 id: property.id,
                 title: property.title,
                 price: property.price,
@@ -284,12 +277,9 @@ class SearchByMap {
                 features: property.features,
                 pictures: property.pictures
             })).filter(property => property.latitude && property.longitude);
-
-            // Initially set properties to all original properties
-            this.properties = [...this.originalProperties];
             
             console.log('Processed fallback properties:', this.properties.length);
-            this.totalPages = Math.ceil(FALLBACK_DATA.total / this.itemsPerPage);
+            this.totalPages = Math.ceil(FALLBACK_DATA.total / this.config.itemsPerPage);
             this.displayProperties();
         } else {
             console.error('Fallback data not available');
@@ -379,11 +369,11 @@ class SearchByMap {
 
             const marker = L.marker([lat, lng], {
                 icon: L.divIcon({
-                    className: 'custom-marker',
-                    html: '<i class="fas fa-home"></i>',
-                    iconSize: [30, 30],
-                    iconAnchor: [15, 15],
-                    popupAnchor: [0, -15]
+        className: 'custom-marker',
+        html: '<i class="fas fa-home"></i>',
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
+        popupAnchor: [0, -15]
                 })
             });
 
@@ -392,23 +382,23 @@ class SearchByMap {
                 maxWidth: 220,
                 closeButton: true
             }).setContent(`
-                <div class="property-popup">
-                    <div class="property-popup-content">
-                        <h3>${property.title}</h3>
-                        <p class="price">${property.price}</p>
-                        <p class="location"><i class="fas fa-map-marker-alt"></i> ${property.location}</p>
-                        <div class="features">
+        <div class="property-popup">
+          <div class="property-popup-content">
+            <h3>${property.title}</h3>
+            <p class="price">${property.price}</p>
+            <p class="location"><i class="fas fa-map-marker-alt"></i> ${property.location}</p>
+            <div class="features">
                             <span><i class="fas fa-bed"></i> ${property.bedrooms} beds</span>
                             <span><i class="fas fa-bath"></i> ${property.bathrooms} baths</span>
                             <span><i class="fas fa-ruler-combined"></i> ${property.area}</span>
-                        </div>
+            </div>
                         <div class="property-popup-actions">
                             <a href="/property-details/?P_RefId=${property.reference}&P_ApiId=${property.id}" 
                                class="property-details-button">
-                                View Details
+                View Details
                             </a>
-                        </div>
-                    </div>
+            </div>
+          </div>
                 </div>
             `);
 
@@ -498,9 +488,9 @@ class SearchByMap {
                    class="property-details-button">
                     View Details
                 </a>
-            </div>
-        `;
-        
+        </div>
+      `;
+
         card.addEventListener('click', () => {
             this.highlightProperty(property.id);
             this.zoomToProperty(property.id);
@@ -510,62 +500,61 @@ class SearchByMap {
     }
 
     highlightProperty(propertyId) {
-        if (this.highlightedProperty) {
-            const prevCard = document.querySelector(`.property-card[data-id="${this.highlightedProperty}"]`);
-            if (prevCard) {
-                prevCard.classList.remove('highlight');
-            }
+      if (this.highlightedProperty) {
+        const prevCard = document.querySelector(`.property-card[data-id="${this.highlightedProperty}"]`);
+        if (prevCard) {
+          prevCard.classList.remove('highlight');
         }
+      }
 
-        const card = document.querySelector(`.property-card[data-id="${propertyId}"]`);
-        if (card) {
-            card.classList.add('highlight');
-            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
+      const card = document.querySelector(`.property-card[data-id="${propertyId}"]`);
+      if (card) {
+        card.classList.add('highlight');
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
 
-        this.highlightedProperty = propertyId;
+      this.highlightedProperty = propertyId;
 
-        const marker = this.propertyMarkers[propertyId];
-        if (marker) {
-            marker.openPopup();
-        }
+      const marker = this.propertyMarkers[propertyId];
+      if (marker) {
+        marker.openPopup();
+      }
     }
 
     zoomToProperty(propertyId) {
-        const property = this.properties.find(p => p.id === propertyId);
-        if (property) {
-            this.map.setView([property.latitude, property.longitude], 15);
-            
-            const marker = this.propertyMarkers[propertyId];
-            if (marker) {
-                marker.openPopup();
-            }
+      const property = this.properties.find(p => p.id === propertyId);
+      if (property) {
+        this.map.setView([property.latitude, property.longitude], 15);
+        
+        const marker = this.propertyMarkers[propertyId];
+        if (marker) {
+          marker.openPopup();
         }
+      }
     }
-}
+  }
 
-// PropertyFilters Class
-class PropertyFilters {
+  // PropertyFilters Class
+  class PropertyFilters {
     constructor() {
-        this.filters = {
-            propertyType: [],
-            location: [],
-            bedrooms: [],
-            bathrooms: [],
-            priceRange: {
-                min: 0,
-                max: 1000000
-            }
-        };
-        this.quickFilters = {
-            featured: false,
-            new: false,
-            reduced: false
-        };
+      this.filters = {
+        propertyType: [],
+        location: [],
+        bedrooms: [],
+        bathrooms: [],
+        priceRange: {
+          min: 0,
+          max: 1000000
+        }
+      };
+      this.quickFilters = {
+        featured: false,
+        new: false,
+        reduced: false
+      };
     }
 
     async init() {
-        // Wait for DOM to be ready
         await new Promise(resolve => {
             if (document.readyState === 'complete') {
                 resolve();
@@ -574,46 +563,35 @@ class PropertyFilters {
             }
         });
 
-        // Wait a short moment to ensure all elements are rendered
         await new Promise(resolve => setTimeout(resolve, 100));
 
         this.setupFilterEventListeners();
-        console.log("init filters");
     }
 
     applyFilters() {
-        console.log('Applying filters:', this.filters);
-        
-        // Get all properties
         const properties = window.searchByMap?.properties || [];
         
-        // Filter properties based on selected criteria
         const filteredProperties = properties.filter(property => {
-            // Check property type
             if (this.filters.propertyType.length > 0 && 
                 !this.filters.propertyType.includes(property.propertyType)) {
                 return false;
             }
             
-            // Check location
             if (this.filters.location.length > 0 && 
                 !this.filters.location.includes(property.location)) {
                 return false;
             }
             
-            // Check bedrooms
             if (this.filters.bedrooms.length > 0 && 
                 !this.filters.bedrooms.includes(property.bedrooms)) {
                 return false;
             }
             
-            // Check bathrooms
             if (this.filters.bathrooms.length > 0 && 
                 !this.filters.bathrooms.includes(property.bathrooms)) {
                 return false;
             }
             
-            // Check price range
             const price = parseFloat(property.price);
             if (!isNaN(price) && 
                 (price < this.filters.priceRange.min || 
@@ -624,7 +602,6 @@ class PropertyFilters {
             return true;
         });
         
-        // Update the map with filtered properties
         if (window.searchByMap) {
             window.searchByMap.properties = filteredProperties;
             window.searchByMap.displayProperties();
@@ -726,9 +703,9 @@ class PropertyFilters {
                 }
                 this.updateSelectedText('location');
                 this.applyFilters();
-            });
         });
-
+      });
+      
         // Property type checkboxes
         const propertyTypeCheckboxes = document.querySelectorAll('input[name="property_type"]');
         console.log('Found property type checkboxes:', propertyTypeCheckboxes.length);
@@ -744,7 +721,7 @@ class PropertyFilters {
                             cb.checked = isChecked;
                         }
                     });
-                } else {
+      } else {
                     const allCheckbox = document.getElementById('property_type-all');
                     if (allCheckbox) {
                         allCheckbox.checked = false;
@@ -797,7 +774,7 @@ class PropertyFilters {
                             cb.checked = isChecked;
                         }
                     });
-                } else {
+        } else {
                     const allCheckbox = document.getElementById('price-all');
                     if (allCheckbox) {
                         allCheckbox.checked = false;
@@ -830,9 +807,9 @@ class PropertyFilters {
                 }
                 this.updateSelectedText('bedrooms');
                 this.applyFilters();
-            });
-        });
-
+      });
+    });
+    
         // Quick filters
         const quickFilterButtons = document.querySelectorAll('.quick-filter-button');
         quickFilterButtons.forEach(button => {
@@ -840,9 +817,9 @@ class PropertyFilters {
                 e.preventDefault();
                 button.classList.toggle('active');
                 this.applyFilters();
-            });
-        });
-        
+      });
+    });
+    
         // Close dropdowns when clicking outside
         document.addEventListener('click', (e) => {
             if (!e.target.closest('.custom-select')) {
@@ -910,68 +887,22 @@ class PropertyFilters {
 // Global initialization flag
 let isInitialized = false;
 
-// Script loading utility
-const loadScript = (src) => {
-    return new Promise((resolve, reject) => {
-        console.log(`Loading script: ${src}`);
-        const script = document.createElement('script');
-        script.src = src;
-        script.onload = () => {
-            console.log(`Script loaded successfully: ${src}`);
-            resolve();
-        };
-        script.onerror = (error) => {
-            console.error(`Failed to load script: ${src}`, error);
-            reject(error);
-        };
-        document.head.appendChild(script);
-    });
-};
-
 // Initialize the application
 const initializeApp = async () => {
     if (isInitialized) {
-        console.log('Already initialized');
         return;
     }
 
     try {
-        console.log('Starting initialization');
-        
-        // Load Leaflet first
-        await loadScript('https://unpkg.com/leaflet@1.7.1/dist/leaflet.js');
-        
-        // Wait a bit to ensure Leaflet is fully initialized
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        // Load MarkerCluster after Leaflet is ready
-        await loadScript('https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js');
-        
-        // Load fallback data
-        await loadScript('/wp-content/themes/solvistaproperty/page-templates/fallback-data.js');
-        
-        console.log('All scripts loaded successfully');
-
-        // Check if solvistaData is available
-        if (typeof window.solvistaData === 'undefined') {
-            console.error('solvistaData is not defined');
-            return;
-        }
-
-        console.log('API Configuration:', window.solvistaData);
-        
-        // Initialize SearchByMap
         window.searchByMap = new SearchByMap();
         await window.searchByMap.initialize();
         
-        // Initialize PropertyFilters
         window.propertyFilters = new PropertyFilters();
         await window.propertyFilters.init();
 
         isInitialized = true;
-        console.log('Initialization complete');
     } catch (error) {
-        console.error('Initialization failed:', error);
+        throw error;
     }
 };
 
