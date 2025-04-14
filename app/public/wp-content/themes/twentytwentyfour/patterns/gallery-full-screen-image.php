@@ -15,7 +15,7 @@
 	</div>
 	<div class="wp-block-cover__inner-container">
 		<!-- wp:spacer {"height":"500px"} -->
-		<div style="height:500px" aria-hidden="true" class="wp-block-spacer"></div>
+		<div style="height:620px" aria-hidden="true" class="wp-block-spacer"></div>
 		<!-- /wp:spacer -->
 	</div>
 </div>

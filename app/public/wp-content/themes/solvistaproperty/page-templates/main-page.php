@@ -814,8 +814,7 @@ get_header();
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
 <link rel="stylesheet" href="<?php echo get_template_directory_uri(); ?>/page-templates/property-search-map.css">
-<script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
-
 <script src="<?php echo get_template_directory_uri(); ?>/page-templates/property-search-map.js"></script>
+
 <?php
 get_footer();

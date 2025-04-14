@@ -11,7 +11,8 @@ if (!defined('_S_VERSION')) {
  * Resales Online API Configuration
  */
 define('RESALES_API_URL', 'https://api.resales-online.com/V6/');
-define('RESALES_API_KEY', ''); // Add your API key here
+define('RESALES_API_KEY', 'fe8458b78a6f4b58303e8f96bc244466ed3f073c');
+define('RESALES_API_IP', '194.9.78.124');
 
 /**
  * Helper function to make API requests to Resales Online
@@ -23,9 +24,16 @@ function solvista_resales_api_request($endpoint, $params = array()) {
     }
 
     $params['p1'] = $api_key;
+    $params['p_ip'] = RESALES_API_IP; // Add IP address to parameters
     $url = RESALES_API_URL . $endpoint . '?' . http_build_query($params);
 
-    $response = wp_remote_get($url);
+    $response = wp_remote_get($url, array(
+        'headers' => array(
+            'X-Forwarded-For' => RESALES_API_IP,
+            'X-Real-IP' => RESALES_API_IP
+        )
+    ));
+    
     if (is_wp_error($response)) {
         return $response;
     }
@@ -62,30 +70,34 @@ add_action('after_setup_theme', 'solvista_setup');
  * Enqueue scripts and styles.
  */
 function solvista_enqueue_scripts() {
-    // Register Leaflet CSS and JS
-    wp_register_style('leaflet', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css');
-    wp_register_script('leaflet', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', array(), null, true);
+    // Define solvistaData first
+    wp_add_inline_script('jquery', 'window.solvistaData = ' . json_encode(array(
+        'apiKey' => RESALES_API_KEY,
+        'apiIp' => RESALES_API_IP,
+        'sandbox' => 'true'
+    )) . ';', 'before');
+
+    // Leaflet CSS
+    wp_enqueue_style('leaflet-css', 'https://unpkg.com/leaflet@1.7.1/dist/leaflet.css', array(), '1.7.1');
     
-    // Register MarkerCluster CSS and JS
-    wp_register_style('markercluster', 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css');
-    wp_register_style('markercluster-default', 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css');
-    wp_register_script('markercluster', 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js', array('leaflet'), null, true);
+    // Leaflet MarkerCluster CSS
+    wp_enqueue_style('leaflet-markercluster-css', 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css', array(), '1.4.1');
+    wp_enqueue_style('leaflet-markercluster-default-css', 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css', array(), '1.4.1');
     
-    // Enqueue our custom styles and scripts
-    wp_enqueue_style('solvista-style', get_stylesheet_uri(), array(), _S_VERSION);
-    wp_enqueue_script('solvista-script', get_template_directory_uri() . '/page-templates/main-page.js', array('jquery', 'leaflet', 'markercluster'), _S_VERSION, true);
+    // Leaflet JS
+    wp_enqueue_script('leaflet-js', 'https://unpkg.com/leaflet@1.7.1/dist/leaflet.js', array('jquery'), '1.7.1', true);
     
-    // Localize script with necessary data
-    wp_localize_script('solvista-script', 'solvistaData', array(
-        'ajaxurl' => admin_url('admin-ajax.php'),
-        'nonce' => wp_create_nonce('solvista_nonce'),
-        'apiUrl' => rest_url('solvista/v1/properties'),
-        'mapCenter' => array(
-            'lat' => 51.5074,
-            'lng' => -0.1278
-        ),
-        'mapZoom' => 13
-    ));
+    // Leaflet MarkerCluster JS
+    wp_enqueue_script('leaflet-markercluster-js', 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js', array('leaflet-js'), '1.4.1', true);
+    
+    // Fallback data
+    wp_enqueue_script('fallback-data', get_template_directory_uri() . '/page-templates/fallback-data.js', array('leaflet-js', 'leaflet-markercluster-js'), '1.0.0', true);
+    
+    // Property search map
+    wp_enqueue_script('property-search-map', get_template_directory_uri() . '/page-templates/property-search-map.js', array('fallback-data'), '1.0.0', true);
+    
+    // Main page
+    wp_enqueue_script('main-page', get_template_directory_uri() . '/page-templates/main-page.js', array('property-search-map'), '1.0.0', true);
 }
 add_action('wp_enqueue_scripts', 'solvista_enqueue_scripts');
 
@@ -266,104 +278,69 @@ add_action('rest_api_init', 'solvista_register_rest_routes');
  * Get properties for REST API
  */
 function solvista_get_properties($request) {
-    // Check if this is a direct API test
-    if (isset($request['test_direct']) && $request['test_direct'] === 'true') {
-        // Make a direct API call to Resales Online
-        $params = array(
-            'p2' => 'propertylistings', // Endpoint for property listings
-            'p3' => 'json', // Response format
-            'p4' => 5, // Number of results per page
-            'p5' => 1 // Page number
-        );
-        
-        $response = solvista_resales_api_request('propertylistings', $params);
-        
-        if (is_wp_error($response)) {
-            return new WP_REST_Response(array(
-                'error' => $response->get_error_message(),
-                'status' => 'error',
-                'message' => 'Failed to connect to Resales Online API'
-            ), 500);
-        }
-        
-        // Return the direct API response
-        return new WP_REST_Response(array(
-            'status' => 'success',
-            'message' => 'Successfully connected to Resales Online API',
-            'properties' => isset($response['PropertyListings']) ? $response['PropertyListings'] : array()
-        ), 200);
+    $params = $request->get_params();
+    
+    // API Configuration
+    $api_config = array(
+        'agency_filter_id' => '1',
+        'contact_id' => '1033180',
+        'api_key' => RESALES_API_KEY,
+        'ip' => RESALES_API_IP,
+        'sandbox' => 'true'
+    );
+    
+    // Build API URL
+    $api_url = 'https://webapi.resales-online.com/V6/SearchProperties';
+    $api_url .= '?p_agency_filterid=' . $api_config['agency_filter_id'];
+    $api_url .= '&p1=' . $api_config['contact_id'];
+    $api_url .= '&p2=' . $api_config['api_key'];
+    $api_url .= '&p_ip=' . $api_config['ip'];
+    $api_url .= '&P_sandbox=' . $api_config['sandbox'];
+    
+    // Add filters from request
+    if (!empty($params['property_type'])) {
+        $api_url .= '&p_property_type=' . urlencode($params['property_type']);
+    }
+    if (!empty($params['location'])) {
+        $api_url .= '&p_location=' . urlencode($params['location']);
+    }
+    if (!empty($params['price_min'])) {
+        $api_url .= '&p_price_min=' . urlencode($params['price_min']);
+    }
+    if (!empty($params['price_max'])) {
+        $api_url .= '&p_price_max=' . urlencode($params['price_max']);
+    }
+    if (!empty($params['bedrooms'])) {
+        $api_url .= '&p_bedrooms=' . urlencode($params['bedrooms']);
+    }
+    if (!empty($params['page'])) {
+        $api_url .= '&p_page=' . urlencode($params['page']);
     }
     
-    // Get filters from request
-    $filters = array();
-    if (!empty($request['filters'])) {
-        $filters = json_decode(stripslashes($request['filters']), true);
-    }
-
-    // Prepare API parameters
-    $params = array(
-        'p2' => 'propertylistings', // Endpoint for property listings
-        'p3' => 'json', // Response format
-        'p4' => 50, // Number of results per page
-        'p5' => isset($request['page']) ? $request['page'] : 1 // Page number
-    );
-
-    // Add filters if provided
-    if (!empty($filters)) {
-        if (!empty($filters['property_type'])) {
-            $params['p6'] = $filters['property_type']; // Property type
-        }
-        if (!empty($filters['property_location'])) {
-            $params['p7'] = $filters['property_location']; // Location
-        }
-        if (!empty($filters['price_min'])) {
-            $params['p8'] = $filters['price_min']; // Minimum price
-        }
-        if (!empty($filters['price_max'])) {
-            $params['p9'] = $filters['price_max']; // Maximum price
-        }
-        if (!empty($filters['bedrooms'])) {
-            $params['p10'] = $filters['bedrooms']; // Number of bedrooms
-        }
-    }
-
     // Make API request
-    $response = solvista_resales_api_request('propertylistings', $params);
+    $response = wp_remote_get($api_url);
     
     if (is_wp_error($response)) {
-        return new WP_REST_Response(array(
-            'error' => $response->get_error_message()
-        ), 500);
+        return new WP_Error('api_error', $response->get_error_message(), array('status' => 500));
     }
-
-    // Transform API response to match our frontend expectations
-    $properties = array();
-    if (!empty($response['PropertyListings'])) {
-        foreach ($response['PropertyListings'] as $property) {
-            $properties[] = array(
-                'id' => $property['PropertyID'],
-                'title' => $property['Title'],
-                'content' => $property['Description'],
-                'price' => $property['Price'],
-                'bedrooms' => $property['Bedrooms'],
-                'bathrooms' => $property['Bathrooms'],
-                'area' => $property['BuildSize'],
-                'address' => $property['Address'],
-                'latitude' => $property['Latitude'],
-                'longitude' => $property['Longitude'],
-                'featured_image' => $property['MainImage'],
-                'property_type' => array($property['PropertyType']),
-                'property_location' => array($property['Location'])
-            );
-        }
+    
+    $body = wp_remote_retrieve_body($response);
+    $data = json_decode($body, true);
+    
+    // Check if the response is valid
+    if (!isset($data['Property']) || !is_array($data['Property'])) {
+        return new WP_Error('invalid_response', 'Invalid API response format', array('status' => 500));
     }
-
-    return new WP_REST_Response(array(
-        'properties' => $properties,
-        'total' => $response['TotalResults'] ?? count($properties),
-        'page' => $params['p5'],
-        'total_pages' => ceil(($response['TotalResults'] ?? count($properties)) / $params['p4'])
-    ), 200);
+    
+    // Ensure QueryInfo exists
+    if (!isset($data['QueryInfo'])) {
+        $data['QueryInfo'] = array(
+            'PropertyCount' => count($data['Property']),
+            'CurrentPage' => 1
+        );
+    }
+    
+    return rest_ensure_response($data);
 }
 
 /**
