@@ -543,8 +543,6 @@
 }
 
 .custom-marker.active {
-  background-color: #ea682f;
-  color: white;
   box-shadow: 0 4px 12px rgba(234, 104, 47, 0.3);
   animation: markerPulse 2s infinite;
   z-index: 3;
@@ -2354,8 +2352,6 @@ body .popup-actions .view-details-btn {
 }
 
 .custom-marker.active {
-    background-color: #ea682f;
-    color: white;
     box-shadow: 0 4px 12px rgba(234, 104, 47, 0.3);
     animation: markerPulse 2s infinite;
     z-index: 3;

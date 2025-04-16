@@ -1005,10 +1005,19 @@ get_header();
         </div>
 </div>
 
-<!-- Add Leaflet MarkerCluster CSS and JS -->
+<!-- Add Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+
+<!-- Add property search map CSS -->
 <link rel="stylesheet" href="<?php echo get_template_directory_uri(); ?>/page-templates/property-search-map.css">
+
+<!-- Add Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+
+<!-- Add property search map JS -->
 <script src="<?php echo get_template_directory_uri(); ?>/page-templates/property-search-map.js"></script>
 
 <div class="property-search-map">

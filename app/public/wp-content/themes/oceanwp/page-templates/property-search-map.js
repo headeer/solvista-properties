@@ -985,12 +985,11 @@ class SearchByMap {
         return `
             <div class="property-popup">
                 <div class="property-popup-image">
-                    <img src="${property.image}" alt="${property.title}" 
+                    <img src="${property.image}" alt="${this.formatPrice(property.price)}" 
                          onerror="this.onerror=null; this.src='/wp-content/themes/solvistaproperty/assets/images/placeholder.svg';">
                 </div>
                 <div class="property-popup-content">
-                    <h3>${property.title}</h3>
-                    <p class="property-popup-price">${this.formatPrice(property.price)}</p>
+                    <h3>${this.formatPrice(property.price)}</h3>
                     <p class="property-popup-location"><i class="fas fa-map-marker-alt"></i> ${property.location}</p>
                     <div class="property-popup-features">
                         <span><i class="fas fa-bed"></i> ${property.bedrooms} beds</span>
@@ -1010,12 +1009,11 @@ class SearchByMap {
         
         card.innerHTML = `
             <div class="property-image">
-                <img src="${property.image}" alt="${property.title}" 
+                <img src="${property.image}" alt="${this.formatPrice(property.price)}"
                      onerror="this.onerror=null; this.src='/wp-content/themes/oceanwp/assets/images/placeholder.jpg';">
             </div>
             <div class="property-details">
-                <h3 class="property-title">${property.title}</h3>
-                <div class="property-price">${this.formatPrice(property.price)}</div>
+                <h3 class="property-title">${this.formatPrice(property.price)}</h3>
                 <div class="property-features">
                     <span class="property-feature">
                         <i class="fas fa-bed"></i>
