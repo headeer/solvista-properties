@@ -1,6 +1,6 @@
 <?php
 /**
- * Template Name: Proper v1
+ * Template Name: Property final v2
  * Template Post Type: page
  * 
  * This is the main template for the property search map functionality.
@@ -22,25 +22,129 @@ get_header();
 
 <!-- Add Font Awesome for icons -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
-<svg class="inline-svg">
-    <symbol id="check-4" viewbox="0 0 12 10">
-        <polyline points="1.5 6 4.5 9 10.5 1"></polyline>
-    </symbol>
-</svg>
+<
+
+<!-- Add Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+
+<!-- Add property map search CSS -->
+<link rel="stylesheet" href="<?php echo get_template_directory_uri(); ?>/page-templates/property-map-search.css">
+
 <!-- Search by Map Header -->
 <div class="search-by-map-header">
     <div class="search-by-map-header-content">
-        <h1>Search by Map</h1>
-        <p>Find your perfect property by exploring our interactive map</p>
+        <div class="search-by-map-title">
+            <h1>Search by Map</h1>
+            <p class="subtitle">Find your perfect property by exploring our interactive map</p>
+        </div>
         <div class="search-by-map-breadcrumbs">
-            <a href="<?php echo home_url(); ?>">Home</a>
-            <span>/</span>
-            <a href="<?php echo home_url('/properties/'); ?>">Properties</a>
-            <span>/</span>
-            <span>Search by Map</span>
+            <a href="<?php echo home_url(); ?>" class="breadcrumb-link">Home</a>
+            <span class="breadcrumb-separator">/</span>
+            <a href="<?php echo home_url('/properties/'); ?>" class="breadcrumb-link">Properties</a>
+            <span class="breadcrumb-separator">/</span>
+            <span class="breadcrumb-current">Search by Map</span>
         </div>
     </div>
 </div>
+
+<style>
+/* Header Styles */
+.search-by-map-header {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    padding: 60px 0 40px;
+    margin-bottom: 40px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.search-by-map-header-content {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+.search-by-map-title {
+    margin-bottom: 30px;
+}
+
+.search-by-map-title h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #2c3e50;
+    margin-bottom: 15px;
+    line-height: 1.2;
+}
+
+.search-by-map-title .subtitle {
+    font-size: 1.1rem;
+    color: #6c757d;
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* Breadcrumbs Styles */
+.search-by-map-breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.9rem;
+}
+
+.breadcrumb-link {
+    color: #3498db;
+    text-decoration: none;
+    transition: color 0.3s ease;
+    padding: 5px 0;
+}
+
+.breadcrumb-link:hover {
+    color: #2980b9;
+    text-decoration: underline;
+}
+
+.breadcrumb-separator {
+    color: #95a5a6;
+}
+
+.breadcrumb-current {
+    color: #7f8c8d;
+    font-weight: 500;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .search-by-map-header {
+        padding: 40px 0 30px;
+    }
+
+    .search-by-map-title h1 {
+        font-size: 2rem;
+    }
+
+    .search-by-map-title .subtitle {
+        font-size: 1rem;
+    }
+
+    .search-by-map-breadcrumbs {
+        font-size: 0.85rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .search-by-map-header {
+        padding: 30px 0 20px;
+    }
+
+    .search-by-map-title h1 {
+        font-size: 1.75rem;
+    }
+
+    .search-by-map-breadcrumbs {
+        flex-wrap: wrap;
+    }
+}
+</style>
 
 <div class="site-content">
     <!-- Filters Section -->
@@ -862,176 +966,26 @@ get_header();
         </form>
     </div>
 
-    
-</div>
-
-<style>
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    body .property-details .property-title {
-  margin: 0 0 10px 0;
-  font-size: 18px;
-  color: #333;
-}
-.custom-select {
-    position: relative;
-}
-    /* Fix price filter search */
-    .price-filter .search-box input {
-        width: 100%;
-        box-sizing: border-box;
-    }
-
-    /* Property Search Map Section Styles */
-    .property-search-map-section {
-        padding: 4rem 0;
-        background-color: #f8f9fa;
-    }
-
-    .map-listing-container {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 2rem;
-        height: calc(100vh - 200px);
-        min-height: 600px;
-    }
-
-    .map-section {
-        position: relative;
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        overflow: hidden;
-    }
-
-    .map-container {
-        width: 100%;
-        height: 100%;
-    }
-
-    .property-listing-section {
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        padding: 1.5rem;
-        overflow-y: auto;
-    }
-
-    .property-listing-header {
-        margin-bottom: 1.5rem;
-    }
-
-    .property-listing-title {
-        font-size: 1.5rem;
-        color: #333;
-        margin-bottom: 0.5rem;
-    }
-
-    .property-listing-description {
-        color: #666;
-        font-size: 0.9rem;
-    }
-
-    #loading-indicator,
-    #map-loader {
-        display: none;
-        position: absolute;
-    }
-
-    .spinner,
-    .loader-spinner {
-        width: 40px;
-        height: 40px;
-        border: 4px solid #f3f3f3;
-        border-top: 4px solid #ea682f;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-    }
-
-    @media (max-width: 1024px) {
-        .map-listing-container {
-            grid-template-columns: 1fr;
-            height: auto;
-        }
-
-        .map-section {
-            height: 500px;
-        }
-
-        .property-listing-section {
-            height: 400px;
-        }
-    }
-
-    @media (max-width: 768px) {
-        .property-search-map-section {
-            padding: 2rem 0;
-        }
-
-        .map-section {
-            height: 400px;
-        }
-
-        .property-listing-section {
-            height: 300px;
-        }
-    }
-</style>
-
-<!-- Property Search Map Section -->
-<div class="property-search-map-section">
-        <div class="map-listing-container">
-            <!-- Map Section -->
-            <div class="map-section">
-                <div id="map" class="map-container"></div>
-                
-                <div id="map-loader" class="map-loader">
-                    <div class="loader-spinner"></div>
-                </div>
-            </div>
-            
-            <!-- Property Listing Section -->
-            <div class="property-listing-section">
-                <div class="property-listing-header">
-                    <h3 class="property-listing-title">Our Exclusive Listings <span class="property-count-display">(0 properties)</span></h3>
-                    <p class="property-listing-description">Discover our handpicked selection of premium properties in the Costa del Sol.</p>
-                </div>
-                <div class="property-listing-container" id="property-listings">
-                    <!-- Property listings will be dynamically added here -->
-                </div>
+    <!-- Map and Properties Section -->
+    <div class="property-search-map-container">
+        <div id="map" class="property-search-map"></div>
+        <div id="loading-indicator" class="loading-indicator">
+            <div class="loader-container">
+                <div class="loader-spinner"></div>
+                <div class="loader-text">Loading Properties</div>
+                 <div class="loader-subtext">Please wait while we fetch the latest listings...</div>
             </div>
         </div>
+        <div id="map-error" class="map-error"></div>
+    </div>
 </div>
-
-<!-- Add Leaflet CSS -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
-
-<!-- Add property search map CSS -->
-<link rel="stylesheet" href="<?php echo get_template_directory_uri(); ?>/page-templates/property-search-map.css">
 
 <!-- Add Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
 
-<!-- Add property search map JS -->
-<script src="<?php echo get_template_directory_uri(); ?>/page-templates/property-search-map.js"></script>
+<!-- Add property map search JS -->
+<script src="<?php echo get_template_directory_uri(); ?>/page-templates/property-map-fallback.js"></script>
+<script src="<?php echo get_template_directory_uri(); ?>/page-templates/property-map-search.js"></script>
 
-<div class="property-search-map">
-    <!-- Full Page Loader -->
-    <div class="full-page-loader">
-        <div class="loader-content">
-            <div class="loader-spinner"></div>
-            <div class="loader-text">Loading Properties</div>
-            <div class="loader-subtext">Please wait while we fetch the latest listings...</div>
-        </div>
-    </div>
-    
-    <!-- Rest of the content -->
-</div>
-
-<?php
-get_footer();
+<?php get_footer(); ?>
