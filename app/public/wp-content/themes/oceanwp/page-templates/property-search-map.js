@@ -102,11 +102,12 @@ class SearchByMap {
 
         // Initialize map with Costa del Sol coordinates
         this.map = L.map('map', {
-            center: [36.7213, -4.4217], // Costa del Sol coordinates
-            zoom: 10, // Reduced initial zoom level
+            center: L.latLng(36.7213, -4.4217), // Costa del Sol coordinates
+            zoom: 12, // Increased initial zoom level
             zoomControl: true,
             minZoom: 8,
-            maxZoom: 18
+            maxZoom: 19, // Increased max zoom for more detail
+            crs: L.CRS.EPSG3857 // Explicitly set the coordinate reference system
         });
 
         // Add OpenStreetMap tile layer
@@ -117,11 +118,12 @@ class SearchByMap {
 
         // Initialize marker cluster group with improved settings
         this.markerCluster = L.markerClusterGroup({
-            maxClusterRadius: 80, // Increased cluster radius
+            maxClusterRadius: 40, // Reduced cluster radius for better precision
             spiderfyOnMaxZoom: true,
-            showCoverageOnHover: false,
+            showCoverageOnHover: true,
             zoomToBoundsOnClick: true,
             disableClusteringAtZoom: 16, // Show individual markers at higher zoom level
+            spiderfyDistanceMultiplier: 1.5, // Increase spacing between spiderfied markers
             iconCreateFunction: function(cluster) {
                 const childCount = cluster.getChildCount();
                 let size = 'small';
@@ -157,10 +159,10 @@ class SearchByMap {
         // Add zoom level change handler
         this.map.on('zoomend', () => {
             const currentZoom = this.map.getZoom();
-            if (currentZoom >= 15) {
+            if (currentZoom >= 16) {
                 this.markerCluster.options.disableClusteringAtZoom = currentZoom;
             } else {
-                this.markerCluster.options.disableClusteringAtZoom = 15;
+                this.markerCluster.options.disableClusteringAtZoom = 16;
             }
         });
     }
@@ -248,7 +250,10 @@ class SearchByMap {
                 // Get coordinates if available, otherwise use random Spain coordinates
                 let latitude = parseFloat(property.gps_x);
                 let longitude = parseFloat(property.gps_y);
-                console.log(latitude, longitude);
+                
+                console.log('Raw coordinates:', property.gps_x, property.gps_y); // Debug log
+                console.log('Parsed coordinates:', latitude, longitude); // Debug log
+                
                 // Validate coordinates
                 if (isNaN(latitude) || isNaN(longitude) || 
                     latitude < -90 || latitude > 90 || 
@@ -257,6 +262,7 @@ class SearchByMap {
                     const randomCoords = this.getRandomSpainCoordinates();
                     latitude = parseFloat(randomCoords.latitude);
                     longitude = parseFloat(randomCoords.longitude);
+                    console.log('Using random coordinates:', latitude, longitude); // Debug log
                 }
                 
                 // Ensure coordinates are numbers
@@ -354,20 +360,41 @@ class SearchByMap {
         const propertiesGrid = document.createElement('div');
         propertiesGrid.className = 'properties-grid';
         listingSection.appendChild(propertiesGrid);
+        const coordinateMap = new Map();
 
         // Add new markers only if map and markerCluster are initialized
         if (this.map && this.markerCluster) {
             this.properties.forEach(property => {
-                // Skip properties with invalid coordinates
-                if (isNaN(property.latitude) || isNaN(property.longitude) || 
-                    property.latitude < -90 || property.latitude > 90 || 
-                    property.longitude < -180 || property.longitude > 180) {
-                    console.warn(`Skipping property ${property.id} due to invalid coordinates: (${property.latitude}, ${property.longitude})`);
-                    return;
-                }
-
                 try {
-                    const marker = L.marker([property.latitude, property.longitude], {
+                    // Validate coordinates before creating marker
+                    const lat = parseFloat(property.latitude);
+                    const lng = parseFloat(property.longitude);
+                    
+                    if (isNaN(lat) || isNaN(lng) || 
+                        lat < -90 || lat > 90 || 
+                        lng < -180 || lng > 180) {
+                        console.warn(`Skipping property ${property.id} due to invalid coordinates: (${property.latitude}, ${property.longitude})`);
+                        return;
+                    }
+
+                    // Create a key for the coordinate
+                    const coordKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+                    
+                    // Get the count of properties at this coordinate
+                    const count = coordinateMap.get(coordKey) || 0;
+                    coordinateMap.set(coordKey, count + 1);
+
+                    // Add a small random offset to markers at the same location
+                    const offset = count > 0 ? {
+                        lat: (Math.random() - 0.5) * 0.001,
+                        lng: (Math.random() - 0.5) * 0.001
+                    } : { lat: 0, lng: 0 };
+
+                    // Create marker with validated coordinates
+                    const markerLatLng = [lat + offset.lat, lng + offset.lng];
+                    console.log('Creating marker at:', markerLatLng);
+
+                    const marker = L.marker(markerLatLng, {
                         icon: L.divIcon({
                             className: 'custom-marker',
                             html: `<div class="price-marker">${this.formatPrice(property.price)}</div>`,
@@ -377,9 +404,20 @@ class SearchByMap {
                     });
 
                     marker.propertyId = property.id;
-                    marker.bindPopup(this.createPropertyPopup(property), {
+                    
+                    // Create popup content
+                    const popupContent = this.createPropertyPopup(property);
+                    marker.bindPopup(popupContent, {
                         offset: L.point(0, -15),
-                        className: 'property-popup'
+                        className: 'property-popup',
+                        maxWidth: 300,
+                        minWidth: 200
+                    });
+
+                    // Add click event to marker
+                    marker.on('click', (e) => {
+                        console.log('Marker clicked:', property.id);
+                        this.showPropertyOnMap(property);
                     });
 
                     this.markers.push(marker);
@@ -394,11 +432,20 @@ class SearchByMap {
 
             // Update map bounds to show all markers with padding
             if (this.markers.length > 0) {
-                const group = new L.featureGroup(this.markers);
-                this.map.fitBounds(group.getBounds(), { 
-                    padding: [100, 100],
-                    maxZoom: 12
-                });
+                try {
+                    const group = new L.featureGroup(this.markers);
+                    const bounds = group.getBounds();
+                    console.log('Map bounds:', bounds);
+                    
+                    // Add padding and set max zoom level
+                    this.map.fitBounds(bounds, { 
+                        padding: [50, 50],
+                        maxZoom: 12,
+                        animate: true
+                    });
+                } catch (error) {
+                    console.error('Error setting map bounds:', error);
+                }
             }
         } else {
             console.warn('Map or markerCluster not initialized, skipping marker creation');
@@ -998,6 +1045,17 @@ class SearchByMap {
                 return;
             }
 
+            // Validate coordinates before showing on map
+            const lat = parseFloat(property.latitude);
+            const lng = parseFloat(property.longitude);
+            
+            if (isNaN(lat) || isNaN(lng) || 
+                lat < -90 || lat > 90 || 
+                lng < -180 || lng > 180) {
+                console.error('Invalid coordinates for property:', property.id, lat, lng);
+                return;
+            }
+
             this.showPropertyOnMap(property);
         });
 
@@ -1006,54 +1064,78 @@ class SearchByMap {
     }
 
     showPropertyOnMap(property) {
-        // Validate coordinates before proceeding
-        const lat = parseFloat(property.latitude);
-        const lng = parseFloat(property.longitude);
-        
-        if (isNaN(lat) || isNaN(lng) || 
-            lat < -90 || lat > 90 || 
-            lng < -180 || lng > 180) {
-            console.error('Invalid coordinates for property:', property.id, lat, lng);
-            return;
-        }
-
-        // Remove active class from all cards
-        document.querySelectorAll('.property-card').forEach(c => c.classList.remove('active'));
-        
-        // Add active class to clicked card
-        const card = document.querySelector(`.property-card[data-property-id="${property.id}"]`);
-        if (card) {
-            card.classList.add('active');
-        }
-
-        // Find the corresponding marker
-        const marker = this.markers.find(m => m.propertyId === property.id);
-        if (marker) {
-            try {
-                // Zoom to marker with animation
-                this.map.flyTo([lat, lng], 16, {
-                    duration: 1.5,
-                    easeLinearity: 0.25,
-                    essential: true // This animation is considered essential
-                });
-
-                // Open popup after a short delay to ensure smooth animation
-                setTimeout(() => {
-                    marker.openPopup();
-                }, 1000);
-
-                // Highlight the marker
-                marker.setIcon(L.divIcon({
-                    className: 'custom-marker active',
-                    html: `<div class="price-marker">${this.formatPrice(property.price)}</div>`,
-                    iconSize: [120, 30],
-                    iconAnchor: [60, 15]
-                }));
-            } catch (error) {
-                console.error('Error flying to marker:', error);
+        try {
+            // Validate coordinates before proceeding
+            const lat = parseFloat(property.latitude);
+            const lng = parseFloat(property.longitude);
+            
+            console.log('Property coordinates:', { lat, lng, raw: { lat: property.latitude, lng: property.longitude } });
+            
+            if (isNaN(lat) || isNaN(lng) || 
+                lat < -90 || lat > 90 || 
+                lng < -180 || lng > 180) {
+                console.error('Invalid coordinates for property:', property.id, lat, lng);
+                return;
             }
-        } else {
-            console.warn('Marker not found for property:', property.id);
+
+            // Remove active class from all cards
+            document.querySelectorAll('.property-card').forEach(c => c.classList.remove('active'));
+            
+            // Add active class to clicked card
+            const card = document.querySelector(`.property-card[data-property-id="${property.id}"]`);
+            if (card) {
+                card.classList.add('active');
+                // Scroll card into view
+                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+
+            // Find the corresponding marker
+            const marker = this.markers.find(m => m.propertyId === property.id);
+            if (marker) {
+                try {
+                    // Ensure the map is initialized
+                    if (!this.map) {
+                        console.error('Map not initialized');
+                        return;
+                    }
+
+                    // Create a new LatLng object with validated coordinates
+                    const latLng = L.latLng(lat, lng);
+                    console.log('Flying to coordinates:', latLng);
+
+                    // First pan to the location
+                    this.map.panTo(latLng);
+
+                    // Then zoom in with animation
+                    this.map.setView(latLng, 17, { // Increased zoom level
+                        animate: true,
+                        duration: 1.5
+                    });
+
+                    // Open popup after a short delay to ensure smooth animation
+                    setTimeout(() => {
+                        if (marker && marker.openPopup) {
+                            marker.openPopup();
+                        }
+                    }, 1000);
+
+                    // Highlight the marker
+                    if (marker.setIcon) {
+                        marker.setIcon(L.divIcon({
+                            className: 'custom-marker active',
+                            html: `<div class="price-marker">${this.formatPrice(property.price)}</div>`,
+                            iconSize: [120, 30],
+                            iconAnchor: [60, 15]
+                        }));
+                    }
+                } catch (error) {
+                    console.error('Error flying to marker:', error);
+                }
+            } else {
+                console.warn('Marker not found for property:', property.id);
+            }
+        } catch (error) {
+            console.error('Error showing property on map:', error);
         }
     }
 }
@@ -1250,14 +1332,7 @@ class PropertyFilters {
         if (advancedFilters) advancedFilters.classList.add('loading');
         if (mobileFilters) mobileFilters.classList.add('loading');
 
-        // Add skeleton loading to property listing
-        if (propertyListing) {
-            propertyListing.innerHTML = `
-                <div class="skeleton-property-card"></div>
-                <div class="skeleton-property-card"></div>
-                <div class="skeleton-property-card"></div>
-            `;
-        }
+       
 
         try {
             // Build API URL with filter parameters
@@ -1448,7 +1523,6 @@ class PropertyFilters {
                             cb.checked = isChecked;
                         }
                     });
-                    this.updateFilters({ propertyType: '' });
       } else {
                     const allCheckbox = document.getElementById('property_type-all');
                     if (allCheckbox) {

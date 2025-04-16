@@ -525,34 +525,54 @@
   background-color: white;
   border-radius: 4px;
   padding: 4px 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   font-weight: bold;
   color: #333;
   text-align: center;
   white-space: nowrap;
   transition: all 0.3s ease;
+  border: 1px solid #ea682f;
+  position: relative;
+  z-index: 1;
 }
 
 .custom-marker:hover {
   transform: scale(1.1);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+  z-index: 2;
 }
 
 .custom-marker.active {
+  background-color: #ea682f;
   color: white;
-  box-shadow: 0 4px 12px rgba(0,123,255,0.3);
+  box-shadow: 0 4px 12px rgba(234, 104, 47, 0.3);
   animation: markerPulse 2s infinite;
+  z-index: 3;
+}
+
+.price-marker {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #ea682f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
+}
+
+.custom-marker.active .price-marker {
+  color: white;
 }
 
 @keyframes markerPulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(0,123,255,0.4);
+    box-shadow: 0 0 0 0 rgba(234, 104, 47, 0.4);
   }
   70% {
-    box-shadow: 0 0 0 10px rgba(0,123,255,0);
+    box-shadow: 0 0 0 10px rgba(234, 104, 47, 0);
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(0,123,255,0);
+    box-shadow: 0 0 0 0 rgba(234, 104, 47, 0);
   }
 }
 
@@ -1385,7 +1405,14 @@ body .popup-actions .view-details-btn {
   margin-bottom: 1rem;
   color: #666;
 }
-
+.property-details .property-price {
+  font-size: 2rem;
+}
+.property-details  .location-text,
+  .property-details .property-features .feature-value{
+  font-size: 1.2rem;
+  line-height: 1.2;
+}
 .property-results .property-feature {
   display: flex;
   align-items: center;
@@ -1470,7 +1497,6 @@ body .popup-actions .view-details-btn {
 }
 
 .property-popup .leaflet-popup-close-button:hover {
-  background-color: rgba(0, 0, 0, 0.7);
 }
 
 .marker-popup {
@@ -2263,7 +2289,7 @@ body .popup-actions .view-details-btn {
 
 /* Marker Cluster Styles */
 .marker-cluster {
-    background-color: rgba(0, 123, 255, 0.6);
+    background-color: rgba(234, 104, 47, 0.6);
     border-radius: 50%;
     text-align: center;
     color: white;
@@ -2272,11 +2298,14 @@ body .popup-actions .view-details-btn {
     align-items: center;
     justify-content: center;
     transition: all 0.3s ease;
+    border: 2px solid white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .marker-cluster:hover {
-    background-color: rgba(0, 123, 255, 0.8);
+    background-color: rgba(234, 104, 47, 0.8);
     transform: scale(1.1);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 }
 
 .marker-cluster-small {
@@ -2299,6 +2328,7 @@ body .popup-actions .view-details-btn {
 
 .marker-cluster-count {
     line-height: 1;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 /* Custom Marker Styles */
@@ -2306,15 +2336,53 @@ body .popup-actions .view-details-btn {
     background-color: white;
     border-radius: 4px;
     padding: 4px 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
     font-weight: bold;
     color: #333;
     text-align: center;
     white-space: nowrap;
     transition: all 0.3s ease;
+    border: 1px solid #ea682f;
+    position: relative;
+    z-index: 1;
 }
 
 .custom-marker:hover {
     transform: scale(1.1);
-    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    z-index: 2;
+}
+
+.custom-marker.active {
+    background-color: #ea682f;
+    color: white;
+    box-shadow: 0 4px 12px rgba(234, 104, 47, 0.3);
+    animation: markerPulse 2s infinite;
+    z-index: 3;
+}
+
+.price-marker {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #ea682f;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100px;
+}
+
+.custom-marker.active .price-marker {
+    color: white;
+}
+
+@keyframes markerPulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(234, 104, 47, 0.4);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(234, 104, 47, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(234, 104, 47, 0);
+    }
 }
