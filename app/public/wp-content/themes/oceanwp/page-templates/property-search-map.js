@@ -1,16 +1,11 @@
 // Property Search Map Script
-fetch('https://solvistaproperty.com/wp-json/resales/v1/map-properties')
-  .then(res => res.json())
-  .then(data => {
-    console.log("Fetched properties:", data);
-  });
-// SearchByMap Class
 class SearchByMap {
     constructor(config = {}) {
         this.config = {
-            apiUrl: '/wp-json/resales/v1/map-properties',
+            apiUrl: 'https://solvistaproperty.com/wp-json/resales/v1/map-properties',
             hasApiKey: true,
             itemsPerPage: 10,
+            defaultLocation: 'Malaga',
             ...config
         };
         this.map = null;
@@ -21,64 +16,22 @@ class SearchByMap {
         this.isLoading = false;
         this.markerCluster = null;
         this.initialized = false;
-        this.filters = new PropertyFilters();
-    }
+        this.filters = {
+            location: this.config.defaultLocation,
+            propertyType: '',
+            minPrice: 0,
+            bedrooms: 0,
+            bathrooms: 0
+        };
+        this.tooltipContainer = null;
+        this.closeButton = null;
 
-    initMap() {
-        const mapContainer = document.getElementById('map');
-        if (!mapContainer) {
-            throw new Error('Map container not found');
+        // Initialize the map when the DOM is loaded
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => this.initialize());
+        } else {
+            this.initialize();
         }
-
-        this.map = L.map('map', {
-            center: [40.4168, -3.7038],
-            zoom: 6,
-            zoomControl: true
-        });
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors',
-            maxZoom: 19
-        }).addTo(this.map);
-
-        this.markerCluster = L.markerClusterGroup({
-            maxClusterRadius: 50,
-            spiderfyOnMaxZoom: true,
-            showCoverageOnHover: false,
-            zoomToBoundsOnClick: true
-        });
-        this.map.addLayer(this.markerCluster);
-    }
-
-    async loadScripts() {
-        const leafletCss = document.createElement('link');
-        leafletCss.rel = 'stylesheet';
-        leafletCss.href = 'https://unpkg.com/leaflet@1.7.1/dist/leaflet.css';
-        document.head.appendChild(leafletCss);
-        
-        const markerClusterCss = document.createElement('link');
-        markerClusterCss.rel = 'stylesheet';
-        markerClusterCss.href = 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css';
-        document.head.appendChild(markerClusterCss);
-        
-        const markerClusterDefaultCss = document.createElement('link');
-        markerClusterDefaultCss.rel = 'stylesheet';
-        markerClusterDefaultCss.href = 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css';
-        document.head.appendChild(markerClusterDefaultCss);
-        
-        await this.loadScript('https://unpkg.com/leaflet@1.7.1/dist/leaflet.js');
-        await this.loadScript('https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js');
-        await this.loadScript('/wp-content/themes/solvistaproperty/page-templates/fallback-data.js');
-    }
-
-    loadScript(src) {
-        return new Promise((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = src;
-            script.onload = () => resolve();
-            script.onerror = (error) => reject(error);
-            document.head.appendChild(script);
-        });
     }
 
     async initialize() {
@@ -89,20 +42,196 @@ class SearchByMap {
         try {
             await this.loadScripts();
             this.initMap();
-            await this.loadProperties();
-            await this.filters.init();
+            this.setupFilterControls();
+            this.initializeQuickFilters();
+            this.initializeAdvancedFilters();
+            this.setupEventListeners();
+            await this.loadProperties(1);
             this.initialized = true;
         } catch (error) {
-            throw error;
+            console.error('Error initializing map:', error);
+            const errorContainer = document.getElementById('map-error');
+            if (errorContainer) {
+                errorContainer.innerHTML = `<p>Error initializing map: ${error.message}</p>`;
+                errorContainer.style.display = 'block';
+            }
         }
+    }
+
+    async loadScripts() {
+        return new Promise((resolve, reject) => {
+            if (typeof L !== 'undefined') {
+                resolve();
+                return;
+            }
+
+            const leafletCss = document.createElement('link');
+            leafletCss.rel = 'stylesheet';
+            leafletCss.href = 'https://unpkg.com/leaflet@1.7.1/dist/leaflet.css';
+            document.head.appendChild(leafletCss);
+
+            const leafletScript = document.createElement('script');
+            leafletScript.src = 'https://unpkg.com/leaflet@1.7.1/dist/leaflet.js';
+            leafletScript.onload = () => {
+                const markerClusterCss = document.createElement('link');
+                markerClusterCss.rel = 'stylesheet';
+                markerClusterCss.href = 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css';
+                document.head.appendChild(markerClusterCss);
+
+                const markerClusterScript = document.createElement('script');
+                markerClusterScript.src = 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js';
+                markerClusterScript.onload = resolve;
+                markerClusterScript.onerror = reject;
+                document.body.appendChild(markerClusterScript);
+            };
+            leafletScript.onerror = reject;
+            document.body.appendChild(leafletScript);
+        });
+    }
+
+    initMap() {
+        const mapContainer = document.getElementById('map');
+        if (!mapContainer) {
+            throw new Error('Map container not found');
+        }
+
+        // Check if map is already initialized
+        if (this.map) {
+            return;
+        }
+
+        // Initialize map with Costa del Sol coordinates
+        this.map = L.map('map', {
+            center: [36.7213, -4.4217], // Costa del Sol coordinates
+            zoom: 10, // Reduced initial zoom level
+            zoomControl: true,
+            minZoom: 8,
+            maxZoom: 18
+        });
+
+        // Add OpenStreetMap tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 19
+        }).addTo(this.map);
+
+        // Initialize marker cluster group with improved settings
+        this.markerCluster = L.markerClusterGroup({
+            maxClusterRadius: 80, // Increased cluster radius
+            spiderfyOnMaxZoom: true,
+            showCoverageOnHover: false,
+            zoomToBoundsOnClick: true,
+            disableClusteringAtZoom: 16, // Show individual markers at higher zoom level
+            iconCreateFunction: function(cluster) {
+                const childCount = cluster.getChildCount();
+                let size = 'small';
+                if (childCount > 50) {
+                    size = 'large';
+                } else if (childCount > 20) {
+                    size = 'medium';
+                }
+                return L.divIcon({
+                    html: `<div class="marker-cluster marker-cluster-${size}">
+                            <div class="marker-cluster-count">${childCount}</div>
+                          </div>`,
+                    className: 'marker-cluster',
+                    iconSize: new L.Point(40, 40)
+                });
+            }
+        });
+        this.map.addLayer(this.markerCluster);
+
+        // Add tooltip container to the map
+        this.tooltipContainer = L.DomUtil.create('div', 'property-tooltip');
+        this.tooltipContainer.style.display = 'none';
+        mapContainer.appendChild(this.tooltipContainer);
+
+        // Add close button to tooltip
+        this.closeButton = L.DomUtil.create('button', 'tooltip-close');
+        this.closeButton.innerHTML = '×';
+        this.tooltipContainer.appendChild(this.closeButton);
+        this.closeButton.addEventListener('click', () => {
+            this.tooltipContainer.style.display = 'none';
+        });
+
+        // Add zoom level change handler
+        this.map.on('zoomend', () => {
+            const currentZoom = this.map.getZoom();
+            if (currentZoom >= 15) {
+                this.markerCluster.options.disableClusteringAtZoom = currentZoom;
+            } else {
+                this.markerCluster.options.disableClusteringAtZoom = 15;
+            }
+        });
+    }
+
+    getRandomSpainCoordinates() {
+        // Spain's approximate boundaries
+        const minLat = 36.0;
+        const maxLat = 44.0;
+        const minLng = -9.0;
+        const maxLng = 3.0;
+        
+        return {
+            latitude: (Math.random() * (maxLat - minLat) + minLat).toFixed(6),
+            longitude: (Math.random() * (maxLng - minLng) + minLng).toFixed(6)
+        };
+    }
+
+    getApiUrl() {
+        const params = new URLSearchParams({
+            Location: this.filters.location || '',
+            PMin: this.filters.minPrice || 0,
+            PMax: this.filters.maxPrice || 1000000,
+            PropertyType: this.filters.propertyType || '',
+            Beds: this.filters.bedrooms || 0,
+            Baths: this.filters.bathrooms || 0
+        });
+
+        return `${this.config.apiUrl}?${params.toString()}`;
     }
 
     async loadProperties(page = 1) {
         this.currentPage = page;
-        this.isLoading = true;
+        
+        // Show global loader
+        const loader = document.querySelector('.global-loader');
+        if (loader) {
+            loader.classList.add('active');
+        }
 
         try {
-            const response = await fetch(this.config.apiUrl);
+            // Build API URL with filter parameters
+            const params = new URLSearchParams();
+            
+            // Only add parameters that have actual values
+            if (this.filters.location) {
+                const locations = Array.isArray(this.filters.location) ? this.filters.location : [this.filters.location];
+                params.set('Location', locations.join(','));
+            }
+            if (this.filters.minPrice > 0) params.set('PMin', this.filters.minPrice);
+            if (this.filters.propertyType) {
+                const propertyTypes = Array.isArray(this.filters.propertyType) ? this.filters.propertyType : [this.filters.propertyType];
+                params.set('PropertyType', propertyTypes.join(','));
+            }
+            if (this.filters.bedrooms) {
+                const bedrooms = Array.isArray(this.filters.bedrooms) ? this.filters.bedrooms : [this.filters.bedrooms];
+                params.set('Beds', bedrooms.join(','));
+            }
+            if (this.filters.bathrooms) {
+                const bathrooms = Array.isArray(this.filters.bathrooms) ? this.filters.bathrooms : [this.filters.bathrooms];
+                params.set('Baths', bathrooms.join(','));
+            }
+
+            const apiUrl = `${this.config.apiUrl}?${params.toString()}`;
+            
+            const response = await fetch(apiUrl, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
             
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -110,198 +239,94 @@ class SearchByMap {
 
             const data = await response.json();
 
-            if (Array.isArray(data)) {
-                this.properties = data.map(property => ({
+            if (!data || !Array.isArray(data)) {
+                throw new Error('API response is not in the expected format');
+            }
+            
+            // Process properties
+            this.properties = data.map(property => {
+                // Get coordinates if available, otherwise use random Spain coordinates
+                let latitude = parseFloat(property.gps_x);
+                let longitude = parseFloat(property.gps_y);
+                console.log(latitude, longitude);
+                // Validate coordinates
+                if (isNaN(latitude) || isNaN(longitude) || 
+                    latitude < -90 || latitude > 90 || 
+                    longitude < -180 || longitude > 180) {
+                    console.warn(`Invalid coordinates for property ${property.reference}: (${property.gps_x}, ${property.gps_y})`);
+                    const randomCoords = this.getRandomSpainCoordinates();
+                    latitude = parseFloat(randomCoords.latitude);
+                    longitude = parseFloat(randomCoords.longitude);
+                }
+                
+                // Ensure coordinates are numbers
+                latitude = Number(latitude);
+                longitude = Number(longitude);
+                
+                const processedProperty = {
                     id: property.reference,
                     reference: property.reference,
                     title: `Property ${property.reference}`,
-                    price: property.price,
-                    location: 'Location not specified',
-                    bedrooms: 0,
-                    bathrooms: 0,
-                    area: '0 m²',
-                    image: '/wp-content/themes/solvistaproperty/assets/images/placeholder.svg',
+                    price: property.price || 0,
+                    location: property.location || 'Location not specified',
+                    bedrooms: property.bedrooms || "", // Not provided in the API
+                    bathrooms: property.bathrooms || "", // Not provided in the API
+                    area: property.area || 'Area not specified',
+                    image: property.pictureUrl,
                     status: 'For Sale',
                     propertyType: 'Property',
-                    latitude: parseFloat(property.gps_y) || 0,
-                    longitude: parseFloat(property.gps_x) || 0,
-                    terrace: false,
-                    pool: false,
-                    garden: false,
-                    parking: false
-                }));
-                this.displayProperties();
-            } else {
-                this.useFallbackData();
-            }
-        } catch (error) {
-            this.useFallbackData();
-        } finally {
-            this.isLoading = false;
-        }
-    }
-
-    setupMap() {
-        const mapContainer = document.getElementById('map');
-        if (!mapContainer) {
-            console.error('Map container not found');
-          return;
-        }
-
-        // Set map container height to ensure visibility
-        mapContainer.style.height = '600px';
-        mapContainer.style.width = '100%';
-
-        // Initialize map with a default view of Spain
-        this.map = L.map('map', {
-            center: [40.4168, -3.7038],
-            zoom: 6,
-            zoomControl: true
-        });
-
-        // Add OpenStreetMap tiles
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors',
-            maxZoom: 19
-        }).addTo(this.map);
-
-        // Initialize marker cluster group
-        this.markerCluster = L.markerClusterGroup({
-            maxClusterRadius: 50,
-            spiderfyOnMaxZoom: true,
-            showCoverageOnHover: false,
-            zoomToBoundsOnClick: true
-        });
-        this.map.addLayer(this.markerCluster);
-
-        console.log('Map initialized successfully');
-    }
-
-    setupEventListeners() {
-        // Filter toggle
-        const filterToggle = document.querySelector('.filter-toggle');
-        const filterContent = document.querySelector('.filter-content');
-        
-        console.log('Filter Elements Debug:', {
-            filterToggle: filterToggle ? 'Found' : 'Not Found',
-            filterContent: filterContent ? 'Found' : 'Not Found'
-        });
-        
-        if (filterToggle && filterContent) {
-            console.log('Adding filter toggle event listener');
+                    latitude: latitude,
+                    longitude: longitude,
+                    province: property.province,
+                    area: property.area,
+                    description: '',
+                    features: [],
+                    dateAdded: new Date().toISOString(),
+                    isFeatured: false,
+                    isNew: false,
+                    isReduced: false,
+                    viewDetails: property.propertyUrl || `/property/${property.reference}`
+                };
+                return processedProperty;
+            });
             
-            // Toggle filter content visibility
-            filterToggle.addEventListener('click', (e) => {
-                console.log('Filter toggle clicked');
-                e.stopPropagation();
-                filterContent.classList.toggle('active');
-                console.log('Filter content active:', filterContent.classList.contains('active'));
-            });
-
-            // Close filters when clicking outside
-            document.addEventListener('click', (e) => {
-                if (!filterContent.contains(e.target) && !filterToggle.contains(e.target)) {
-                    console.log('Clicking outside filters, closing');
-                    filterContent.classList.remove('active');
-                }
-            });
-
-            // Prevent filter content from closing when clicking inside
-            filterContent.addEventListener('click', (e) => {
-                e.stopPropagation();
-            });
-        }
-
-        // View toggle
-        const viewToggleButtons = document.querySelectorAll('.view-toggle button');
-        viewToggleButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                viewToggleButtons.forEach(btn => btn.classList.remove('active'));
-                button.classList.add('active');
-                const view = button.getAttribute('data-view');
-                this.toggleView(view);
-            });
-        });
-
-        // Mobile list toggle
-        const mobileListToggle = document.querySelector('.mobile-list-toggle');
-        const propertyListSection = document.querySelector('.property-listing-section');
-        const closeListButton = document.querySelector('.close-list');
-        
-        if (mobileListToggle && propertyListSection) {
-            mobileListToggle.addEventListener('click', () => {
-                propertyListSection.classList.add('active');
-                document.body.style.overflow = 'hidden';
-            });
-        }
-
-        if (closeListButton && propertyListSection) {
-            closeListButton.addEventListener('click', () => {
-                propertyListSection.classList.remove('active');
-                document.body.style.overflow = '';
-            });
-        }
-
-        // Close list when clicking outside on mobile
-        document.addEventListener('click', (e) => {
-            if (window.innerWidth <= 768 && 
-                propertyListSection.classList.contains('active') &&
-                !propertyListSection.contains(e.target) &&
-                !mobileListToggle.contains(e.target)) {
-                propertyListSection.classList.remove('active');
-                document.body.style.overflow = '';
+            if (this.properties.length === 0) {
+                throw new Error('No properties found');
             }
-        });
-    }
-
-    useFallbackData() {
-        if (typeof FALLBACK_DATA !== 'undefined') {
-            console.log('Using fallback data:', FALLBACK_DATA);
-            this.properties = FALLBACK_DATA.properties.map(property => ({
-                id: property.id,
-                title: property.title,
-                price: property.price,
-                location: property.location,
-                latitude: parseFloat(property.latitude),
-                longitude: parseFloat(property.longitude),
-                bedrooms: property.bedrooms,
-                bathrooms: property.bathrooms,
-                area: property.area,
-                image: property.image,
-                propertyType: property.propertyType,
-                status: property.status,
-                reference: property.reference,
-                currency: property.currency,
-                built: property.built,
-                plot: property.plot,
-                terrace: property.terrace,
-                pool: property.pool,
-                garden: property.garden,
-                parking: property.parking,
-                features: property.features,
-                pictures: property.pictures
-            })).filter(property => property.latitude && property.longitude);
             
-            console.log('Processed fallback properties:', this.properties.length);
-            this.totalPages = Math.ceil(FALLBACK_DATA.total / this.config.itemsPerPage);
+            this.totalPages = Math.ceil(this.properties.length / this.config.itemsPerPage);
             this.displayProperties();
-        } else {
-            console.error('Fallback data not available');
+        } catch (error) {
+            console.error('Error loading properties:', error);
+            const errorContainer = document.getElementById('map-error');
+            if (errorContainer) {
+                errorContainer.innerHTML = `<p>Error loading properties: ${error.message}</p>`;
+                errorContainer.style.display = 'block';
+            }
+        } finally {
+            // Hide global loader
+            const loader = document.querySelector('.global-loader');
+            if (loader) {
+                loader.classList.remove('active');
+            }
         }
     }
 
     displayProperties() {
+        // Clear existing markers only if markerCluster is initialized
+        if (this.markerCluster) {
+            this.markerCluster.clearLayers();
+        }
+        this.markers = [];
+
         // Get or create properties container
         let container = document.querySelector('.properties-container');
         if (!container) {
-            console.log('Creating properties container');
             container = document.createElement('div');
             container.className = 'properties-container';
             
-            // Find the map container
             const mapContainer = document.getElementById('map');
             if (mapContainer) {
-                // Insert the properties container after the map
                 mapContainer.parentNode.insertBefore(container, mapContainer.nextSibling);
             } else {
                 console.error('Map container not found, cannot create properties container');
@@ -330,312 +355,1014 @@ class SearchByMap {
         propertiesGrid.className = 'properties-grid';
         listingSection.appendChild(propertiesGrid);
 
-        // Clear existing markers
-        if (this.markerCluster) {
-            this.markerCluster.clearLayers();
-        }
+        // Add new markers only if map and markerCluster are initialized
+        if (this.map && this.markerCluster) {
+            this.properties.forEach(property => {
+                // Skip properties with invalid coordinates
+                if (isNaN(property.latitude) || isNaN(property.longitude) || 
+                    property.latitude < -90 || property.latitude > 90 || 
+                    property.longitude < -180 || property.longitude > 180) {
+                    console.warn(`Skipping property ${property.id} due to invalid coordinates: (${property.latitude}, ${property.longitude})`);
+                    return;
+                }
 
-        // Create a feature group to store all markers
-        const markers = [];
+                try {
+                    const marker = L.marker([property.latitude, property.longitude], {
+                        icon: L.divIcon({
+                            className: 'custom-marker',
+                            html: `<div class="price-marker">${this.formatPrice(property.price)}</div>`,
+                            iconSize: [120, 30],
+                            iconAnchor: [60, 15]
+                        })
+                    });
 
-        // Add markers and cards for each property
-        this.properties.forEach(property => {
-            const marker = this.createMarker(property);
-            if (marker) {
-                markers.push(marker);
-                this.createPropertyCard(property, propertiesGrid);
-            }
-        });
+                    marker.propertyId = property.id;
+                    marker.bindPopup(this.createPropertyPopup(property), {
+                        offset: L.point(0, -15),
+                        className: 'property-popup'
+                    });
 
-        // Add all markers to the cluster group
-        if (markers.length > 0) {
-            this.markerCluster.addLayers(markers);
-            
-            // Fit map bounds to show all markers
-            const group = L.featureGroup(markers);
-            this.map.fitBounds(group.getBounds(), {
-                padding: [50, 50]
+                    this.markers.push(marker);
+                    this.markerCluster.addLayer(marker);
+
+                    // Create property card
+                    this.createPropertyCard(property, propertiesGrid);
+                } catch (error) {
+                    console.error(`Error creating marker for property ${property.id}:`, error);
+                }
             });
-        }
 
-        console.log(`Displayed ${markers.length} properties on map and in listing`);
+            // Update map bounds to show all markers with padding
+            if (this.markers.length > 0) {
+                const group = new L.featureGroup(this.markers);
+                this.map.fitBounds(group.getBounds(), { 
+                    padding: [100, 100],
+                    maxZoom: 12
+                });
+            }
+        } else {
+            console.warn('Map or markerCluster not initialized, skipping marker creation');
+        }
     }
 
-    createMarker(property) {
-        try {
-            const lat = parseFloat(property.latitude);
-            const lng = parseFloat(property.longitude);
-            
-            if (isNaN(lat) || isNaN(lng)) {
-                console.warn('Invalid coordinates for property:', property.id);
-                return null;
+    updateFilters(newFilters) {
+        // Only update filters that are provided in newFilters
+        Object.keys(newFilters).forEach(key => {
+            if (newFilters[key] === undefined || newFilters[key] === null) {
+                delete this.filters[key];
+            } else {
+                this.filters[key] = newFilters[key];
             }
+        });
+        
+        this.updateUrlParams();
+        this.loadProperties();
+    }
 
-            const marker = L.marker([lat, lng], {
-                icon: L.divIcon({
-        className: 'custom-marker',
-        html: '<i class="fas fa-home"></i>',
-        iconSize: [30, 30],
-        iconAnchor: [15, 15],
-        popupAnchor: [0, -15]
-                })
+    updateUrlParams() {
+        const urlParams = new URLSearchParams();
+        
+        // Only add parameters that have actual values
+        if (this.filters.location) {
+            const locations = Array.isArray(this.filters.location) ? this.filters.location : [this.filters.location];
+            urlParams.set('location', locations.join(','));
+        }
+        if (this.filters.propertyType) {
+            const propertyTypes = Array.isArray(this.filters.propertyType) ? this.filters.propertyType : [this.filters.propertyType];
+            urlParams.set('propertyType', propertyTypes.join(','));
+        }
+        if (this.filters.minPrice > 0) urlParams.set('minPrice', this.filters.minPrice);
+        if (this.filters.bedrooms) {
+            const bedrooms = Array.isArray(this.filters.bedrooms) ? this.filters.bedrooms : [this.filters.bedrooms];
+            urlParams.set('bedrooms', bedrooms.join(','));
+        }
+        if (this.filters.bathrooms) {
+            const bathrooms = Array.isArray(this.filters.bathrooms) ? this.filters.bathrooms : [this.filters.bathrooms];
+            urlParams.set('bathrooms', bathrooms.join(','));
+        }
+
+        const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
+        window.history.pushState({}, '', newUrl);
+    }
+
+    setupEventListeners() {
+        try {
+        // Filter toggle
+        const filterToggle = document.querySelector('.filter-toggle');
+        const filterContent = document.querySelector('.filter-content');
+        
+        if (filterToggle && filterContent) {
+            filterToggle.addEventListener('click', (e) => {
+                    e.preventDefault();
+                e.stopPropagation();
+                filterContent.classList.toggle('active');
+                    filterToggle.classList.toggle('active');
             });
 
-            const popup = L.popup({
-                className: 'property-popup',
-                maxWidth: 220,
-                closeButton: true
-            }).setContent(`
-        <div class="property-popup">
-          <div class="property-popup-content">
-            <h3>${property.title}</h3>
-            <p class="price">${property.price}</p>
-            <p class="location"><i class="fas fa-map-marker-alt"></i> ${property.location}</p>
-            <div class="features">
-                            <span><i class="fas fa-bed"></i> ${property.bedrooms} beds</span>
-                            <span><i class="fas fa-bath"></i> ${property.bathrooms} baths</span>
-                            <span><i class="fas fa-ruler-combined"></i> ${property.area}</span>
-            </div>
-                        <div class="property-popup-actions">
-                            <a href="/property-details/?P_RefId=${property.reference}&P_ApiId=${property.id}" 
-                               class="property-details-button">
-                View Details
-                            </a>
-            </div>
-          </div>
-                </div>
-            `);
+            document.addEventListener('click', (e) => {
+                if (!filterContent.contains(e.target) && !filterToggle.contains(e.target)) {
+                    filterContent.classList.remove('active');
+                        filterToggle.classList.remove('active');
+                }
+            });
 
-            marker.bindPopup(popup);
-            return marker;
-        } catch (error) {
-            console.error('Error creating marker:', error);
-            return null;
+            filterContent.addEventListener('click', (e) => {
+                e.stopPropagation();
+            });
         }
+
+            // Advanced Filters Toggle
+            const advancedToggle = document.querySelector('.advanced-filters-toggle .toggle-button');
+            const advancedPanel = document.querySelector('.advanced-filters-panel');
+            
+            if (advancedToggle && advancedPanel) {
+                advancedToggle.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    advancedPanel.classList.toggle('active');
+                    advancedToggle.closest('.advanced-filters-toggle').classList.toggle('active');
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (!advancedPanel.contains(e.target) && !advancedToggle.contains(e.target)) {
+                        advancedPanel.classList.remove('active');
+                        advancedToggle.closest('.advanced-filters-toggle').classList.remove('active');
+                    }
+                });
+
+                advancedPanel.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                });
+            }
+
+            // Setup filter controls
+            this.setupFilterControls();
+
+            // Advanced Filters Accordion
+            const accordionHeader = document.querySelector('.accordion-header');
+            const accordionContent = document.querySelector('.accordion-content');
+            const accordionIcon = document.querySelector('.accordion-icon');
+
+            if (accordionHeader && accordionContent && accordionIcon) {
+                accordionHeader.addEventListener('click', () => {
+                    accordionContent.classList.toggle('active');
+                    accordionIcon.classList.toggle('active');
+                });
+            }
+
+            // Map container
+            const mapContainer = document.querySelector('.property-search-map-container');
+            if (mapContainer) {
+                mapContainer.addEventListener('click', (e) => {
+                    if (e.target === mapContainer) {
+                        filterContent?.classList.remove('active');
+                        filterToggle?.classList.remove('active');
+                        advancedPanel?.classList.remove('active');
+                        advancedToggle?.classList.remove('active');
+                    }
+                });
+            }
+
+            // Initialize filters from URL parameters
+            this.initializeFiltersFromUrl();
+
+        } catch (error) {
+            console.error('Error setting up event listeners:', error);
+        }
+    }
+
+    setupFilterControls() {
+        // Location filter
+        const locationFilter = document.querySelector('.location-filter');
+        if (locationFilter) {
+            locationFilter.addEventListener('change', (e) => {
+                this.filters.location = e.target.value;
+                this.updateUrlParams();
+                this.loadProperties();
+            });
+        }
+
+        // Property type filter
+        const propertyTypeFilter = document.querySelector('.property-type-filter');
+        if (propertyTypeFilter) {
+            propertyTypeFilter.addEventListener('change', (e) => {
+                this.filters.propertyType = e.target.value;
+                this.updateUrlParams();
+                this.loadProperties();
+            });
+        }
+
+        // Price range filter
+        const minPriceFilter = document.querySelector('.min-price-filter');
+        const maxPriceFilter = document.querySelector('.max-price-filter');
+        if (minPriceFilter) {
+            minPriceFilter.addEventListener('change', (e) => {
+                this.filters.minPrice = e.target.value;
+                this.updateUrlParams();
+                this.loadProperties();
+            });
+        }
+        if (maxPriceFilter) {
+            maxPriceFilter.addEventListener('change', (e) => {
+                this.filters.maxPrice = e.target.value;
+                this.updateUrlParams();
+                this.loadProperties();
+            });
+        }
+
+        // Bedrooms filter
+        const bedroomsFilter = document.querySelector('.bedrooms-filter');
+        if (bedroomsFilter) {
+            bedroomsFilter.addEventListener('change', (e) => {
+                this.filters.bedrooms = e.target.value;
+                this.updateUrlParams();
+                this.loadProperties();
+            });
+        }
+
+        // Bathrooms filter
+        const bathroomsFilter = document.querySelector('.bathrooms-filter');
+        if (bathroomsFilter) {
+            bathroomsFilter.addEventListener('change', (e) => {
+                this.filters.bathrooms = e.target.value;
+                this.updateUrlParams();
+                this.loadProperties();
+            });
+        }
+    }
+
+    initializeFiltersFromUrl() {
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        // Location
+        if (urlParams.has('location')) {
+            const locationFilter = document.querySelector('.location-filter');
+            if (locationFilter) {
+                locationFilter.value = urlParams.get('location');
+                this.filters.location = urlParams.get('location');
+            }
+        }
+
+        // Property type
+        if (urlParams.has('propertyType')) {
+            const propertyTypeFilter = document.querySelector('.property-type-filter');
+            if (propertyTypeFilter) {
+                propertyTypeFilter.value = urlParams.get('propertyType');
+                this.filters.propertyType = urlParams.get('propertyType');
+            }
+        }
+
+        // Price range
+        if (urlParams.has('minPrice')) {
+            const minPriceFilter = document.querySelector('.min-price-filter');
+            if (minPriceFilter) {
+                minPriceFilter.value = urlParams.get('minPrice');
+                this.filters.minPrice = urlParams.get('minPrice');
+            }
+        }
+        if (urlParams.has('maxPrice')) {
+            const maxPriceFilter = document.querySelector('.max-price-filter');
+            if (maxPriceFilter) {
+                maxPriceFilter.value = urlParams.get('maxPrice');
+                this.filters.maxPrice = urlParams.get('maxPrice');
+            }
+        }
+
+        // Bedrooms
+        if (urlParams.has('bedrooms')) {
+            const bedroomsFilter = document.querySelector('.bedrooms-filter');
+            if (bedroomsFilter) {
+                bedroomsFilter.value = urlParams.get('bedrooms');
+                this.filters.bedrooms = urlParams.get('bedrooms');
+            }
+        }
+
+        // Bathrooms
+        if (urlParams.has('bathrooms')) {
+            const bathroomsFilter = document.querySelector('.bathrooms-filter');
+            if (bathroomsFilter) {
+                bathroomsFilter.value = urlParams.get('bathrooms');
+                this.filters.bathrooms = urlParams.get('bathrooms');
+            }
+        }
+
+        // Load properties with initial filters
+        this.loadProperties();
+    }
+
+    showTooltip(content, latlng) {
+        this.tooltipContainer.innerHTML = content;
+        this.tooltipContainer.appendChild(this.closeButton);
+        this.tooltipContainer.style.display = 'block';
+
+        // Position tooltip
+        const point = this.map.latLngToLayerPoint(latlng);
+        const tooltipWidth = this.tooltipContainer.offsetWidth;
+        const tooltipHeight = this.tooltipContainer.offsetHeight;
+        const mapWidth = this.map.getSize().x;
+        const mapHeight = this.map.getSize().y;
+
+        let left = point.x - tooltipWidth / 2;
+        let top = point.y - tooltipHeight - 20;
+
+        // Adjust position if tooltip goes outside map bounds
+        if (left < 0) left = 0;
+        if (left + tooltipWidth > mapWidth) left = mapWidth - tooltipWidth;
+        if (top < 0) top = point.y + 20;
+        if (top + tooltipHeight > mapHeight) top = mapHeight - tooltipHeight;
+
+        this.tooltipContainer.style.left = left + 'px';
+        this.tooltipContainer.style.top = top + 'px';
+    }
+
+    updateAdvancedFilters() {
+        const selectedFeatures = Array.from(document.querySelectorAll('.advanced-filters input[type="checkbox"]:checked'))
+            .map(checkbox => checkbox.value);
+
+        this.filters.features = selectedFeatures;
+        this.loadProperties(1);
+    }
+
+    initializeAdvancedFilters() {
+        const advancedToggle = document.querySelector('.advanced-filters-toggle');
+        const advancedPanel = document.querySelector('.advanced-filters-panel');
+        const closeButton = document.querySelector('.close-panel');
+        
+        if (advancedToggle && advancedPanel) {
+            // Toggle panel visibility
+            advancedToggle.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                advancedPanel.classList.toggle('active');
+                advancedToggle.classList.toggle('active');
+            });
+
+            // Close panel when clicking close button
+            if (closeButton) {
+                closeButton.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    advancedPanel.classList.remove('active');
+                    advancedToggle.classList.remove('active');
+                });
+            }
+
+            // Close panel when clicking outside
+            document.addEventListener('click', (e) => {
+                if (!advancedPanel.contains(e.target) && !advancedToggle.contains(e.target)) {
+                    advancedPanel.classList.remove('active');
+                    advancedToggle.classList.remove('active');
+                }
+            });
+
+            // Handle filter option clicks
+            const filterOptions = advancedPanel.querySelectorAll('.filter-option');
+            filterOptions.forEach(option => {
+                const checkbox = option.querySelector('input[type="checkbox"]');
+                const label = option.querySelector('label');
+                
+                if (checkbox && label) {
+                    // Make the entire option clickable
+                    option.addEventListener('click', (e) => {
+                        // Prevent double-triggering if clicking the checkbox directly
+                        if (e.target !== checkbox) {
+                            checkbox.checked = !checkbox.checked;
+                            
+                            // Update active state
+                            option.classList.toggle('active');
+                            label.classList.toggle('active');
+                            
+                            // Trigger the change event manually
+                            const event = new Event('change', { bubbles: true });
+                            checkbox.dispatchEvent(event);
+                        }
+                    });
+
+                    // Handle checkbox changes
+                    checkbox.addEventListener('change', () => {
+                        // Update UI
+                        option.classList.toggle('active', checkbox.checked);
+                        label.classList.toggle('active', checkbox.checked);
+                        
+                        // Get filter type and value
+                        const filterType = checkbox.getAttribute('data-filter-type');
+                        const filterValue = checkbox.value;
+                        
+                        // Update filters object
+                        if (!this.filters.advanced) {
+                            this.filters.advanced = {};
+                        }
+                        
+                        if (!this.filters.advanced[filterType]) {
+                            this.filters.advanced[filterType] = [];
+                        }
+                        
+                        if (checkbox.checked) {
+                            // Add value if not already present
+                            if (!this.filters.advanced[filterType].includes(filterValue)) {
+                                this.filters.advanced[filterType].push(filterValue);
+                            }
+                        } else {
+                            // Remove value
+                            this.filters.advanced[filterType] = this.filters.advanced[filterType]
+                                .filter(val => val !== filterValue);
+                        }
+                        
+                        // Update URL and reload properties
+                        this.updateUrlWithFilters();
+                        this.loadProperties(1);
+                    });
+                }
+            });
+        }
+    }
+
+    updateUrlWithFilters() {
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        // Clear existing filter parameters
+        for (const key of urlParams.keys()) {
+            if (key.startsWith('filter_') || 
+                key === 'location' || 
+                key === 'propertyType' || 
+                key === 'minPrice' || 
+                key === 'bedrooms' || 
+                key === 'bathrooms' ||
+                key === 'beach' ||
+                key === 'golf' ||
+                key === 'exclusive' ||
+                key === 'modern' ||
+                key === 'new') {
+                urlParams.delete(key);
+            }
+        }
+        
+        // Add quick filters to URL
+        if (this.filters.beach) urlParams.set('beach', 'true');
+        if (this.filters.golf) urlParams.set('golf', 'true');
+        if (this.filters.exclusive) urlParams.set('exclusive', 'true');
+        if (this.filters.modern) urlParams.set('modern', 'true');
+        if (this.filters.new) urlParams.set('new', 'true');
+        
+        // Add advanced filters to URL
+        if (this.filters.advanced) {
+            Object.entries(this.filters.advanced).forEach(([filterType, values]) => {
+                if (values && values.length > 0 && values[0] !== null) {
+                    urlParams.set(`filter_${filterType}`, values.join(','));
+                }
+            });
+        }
+        
+        // Add other filters only if they have non-null values
+        if (this.filters.location && this.filters.location !== 'null') {
+            urlParams.set('location', this.filters.location);
+        }
+        if (this.filters.propertyType && this.filters.propertyType !== 'null') {
+            urlParams.set('propertyType', this.filters.propertyType);
+        }
+        if (this.filters.minPrice > 0) {
+            urlParams.set('minPrice', this.filters.minPrice);
+        }
+        if (this.filters.bedrooms > 0) {
+            urlParams.set('bedrooms', this.filters.bedrooms);
+        }
+        if (this.filters.bathrooms > 0) {
+            urlParams.set('bathrooms', this.filters.bathrooms);
+        }
+        
+        // Update URL without reloading the page
+        const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
+        window.history.pushState({}, '', newUrl);
+    }
+
+    initializeQuickFilters() {
+        const quickFilters = document.querySelector('.quick-filters');
+        const clearAllButton = quickFilters.querySelector('.clear-all-filters');
+        
+        // Clear all filters functionality
+        if (clearAllButton) {
+            clearAllButton.addEventListener('click', () => {
+                // Remove active class from all quick filter buttons
+                const quickFilterButtons = quickFilters.querySelectorAll('.quick-filter-button');
+                quickFilterButtons.forEach(button => {
+                    button.classList.remove('active');
+                });
+                
+                // Reset all quick filter values
+                this.filters.beach = false;
+                this.filters.golf = false;
+                this.filters.exclusive = false;
+                this.filters.modern = false;
+                this.filters.new = false;
+                
+                // Reset advanced filters
+                this.resetAdvancedFilters();
+                
+                // Update URL and reload properties
+                this.updateUrlWithFilters();
+                this.loadProperties(1);
+            });
+        }
+        
+        // Quick filter buttons functionality
+        const quickFilterButtons = quickFilters.querySelectorAll('.quick-filter-button');
+        quickFilterButtons.forEach(button => {
+            button.addEventListener('click', (e) => {
+                e.preventDefault();
+                const filterType = button.getAttribute('data-filter-type');
+                
+                // Toggle active state
+                button.classList.toggle('active');
+                
+                // Update filters based on the quick filter type
+                switch(filterType) {
+                    case 'beach':
+                        this.filters.beach = button.classList.contains('active');
+                        break;
+                    case 'golf':
+                        this.filters.golf = button.classList.contains('active');
+                        break;
+                    case 'exclusive':
+                        this.filters.exclusive = button.classList.contains('active');
+                        break;
+                    case 'modern':
+                        this.filters.modern = button.classList.contains('active');
+                        break;
+                    case 'new':
+                        this.filters.new = button.classList.contains('active');
+                        break;
+                }
+                
+                // Update URL and reload properties
+                this.updateUrlWithFilters();
+                this.loadProperties(1);
+            });
+        });
+    }
+
+    resetAdvancedFilters() {
+        // Reset all checkboxes
+        const checkboxes = document.querySelectorAll('.filter-option input[type="checkbox"]');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = false;
+            const option = checkbox.closest('.filter-option');
+            if (option) {
+                option.classList.remove('active');
+            }
+        });
+        
+        // Reset filter values
+        this.filters.location = '';
+        this.filters.propertyType = '';
+        this.filters.minPrice = 0;
+        this.filters.bedrooms = 0;
+        this.filters.bathrooms = 0;
+    }
+
+    formatPrice(price) {
+        if (!price) return 'Price on request';
+        
+        // Convert to number if it's a string
+        const numericPrice = typeof price === 'string' ? parseFloat(price.replace(/[^0-9.-]+/g, '')) : price;
+        
+        // Format the price with thousands separator and currency symbol
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: 'EUR',
+            maximumFractionDigits: 0,
+            minimumFractionDigits: 0
+        }).format(numericPrice);
+    }
+
+    createPropertyPopup(property) {
+        return `
+            <div class="property-popup">
+                <div class="property-popup-image">
+                    <img src="${property.image}" alt="${property.title}" 
+                         onerror="this.onerror=null; this.src='/wp-content/themes/solvistaproperty/assets/images/placeholder.svg';">
+                </div>
+                <div class="property-popup-content">
+                    <h3>${property.title}</h3>
+                    <p class="property-popup-price">${this.formatPrice(property.price)}</p>
+                    <p class="property-popup-location"><i class="fas fa-map-marker-alt"></i> ${property.location}</p>
+                    <div class="property-popup-features">
+                        <span><i class="fas fa-bed"></i> ${property.bedrooms} beds</span>
+                        <span><i class="fas fa-bath"></i> ${property.bathrooms} baths</span>
+                        <span><i class="fas fa-ruler-combined"></i> ${property.area}</span>
+                    </div>
+                    <a href="${property.viewDetails}" class="property-popup-button">View Details</a>
+                </div>
+            </div>
+        `;
     }
 
     createPropertyCard(property, container) {
         const card = document.createElement('div');
         card.className = 'property-card';
-        card.setAttribute('data-id', property.id);
-        
-        const featuresList = [];
-        if (property.terrace) featuresList.push('Terrace');
-        if (property.pool) featuresList.push('Pool');
-        if (property.garden) featuresList.push('Garden');
-        if (property.parking) featuresList.push('Parking');
-        
-        // Format price with thousands separator
-        let formattedPrice = 'Price on request';
-        if (property.price) {
-            // If price already contains commas, return it as is
-            if (property.price.toString().includes(',')) {
-                formattedPrice = property.price;
-            } else {
-                const price = parseFloat(property.price);
-                if (!isNaN(price)) {
-                    formattedPrice = new Intl.NumberFormat('en-US', {
-                        style: 'currency',
-                        currency: property.currency || 'EUR',
-                        maximumFractionDigits: 0,
-                        minimumFractionDigits: 0
-                    }).format(price);
-                }
-            }
-        }
-        
-        // Handle missing images with proper fallback
-        let imageUrl;
-        
-        if (property.image) {
-            // Check if it's a full URL or a relative path
-            if (property.image.startsWith('http')) {
-                imageUrl = property.image;
-            } else {
-                // Ensure the path starts with a slash
-                imageUrl = property.image.startsWith('/') ? property.image : '/' + property.image;
-            }
-        } else if (property.pictures && property.pictures.length > 0) {
-            // Use the first picture if available
-            const firstPicture = property.pictures[0];
-            if (firstPicture.startsWith('http')) {
-                imageUrl = firstPicture;
-            } else {
-                imageUrl = firstPicture.startsWith('/') ? firstPicture : '/' + firstPicture;
-            }
-        }
+        card.dataset.propertyId = property.id;
         
         card.innerHTML = `
             <div class="property-image">
-                <img src="${imageUrl}" 
-                     alt="${property.title}"
-                     onerror="this.onerror=null; this.src='/wp-content/themes/solvistaproperty/assets/images/placeholder.svg';">
-                <div class="property-status">${property.status}</div>
+                <img src="${property.image}" alt="${property.title}" 
+                     onerror="this.onerror=null; this.src='/wp-content/themes/oceanwp/assets/images/placeholder.jpg';">
             </div>
             <div class="property-details">
                 <h3 class="property-title">${property.title}</h3>
-                <p class="property-price">${formattedPrice}</p>
-                <p class="property-location"><i class="fas fa-map-marker-alt"></i> ${property.location}</p>
+                <div class="property-price">${this.formatPrice(property.price)}</div>
                 <div class="property-features">
-                    <span><i class="fas fa-bed"></i> ${property.bedrooms} beds</span>
-                    <span><i class="fas fa-bath"></i> ${property.bathrooms} baths</span>
-                    <span><i class="fas fa-ruler-combined"></i> ${property.area}</span>
+                    <span class="property-feature">
+                        <i class="fas fa-bed"></i>
+                        <span class="feature-value">${property.bedrooms} beds</span>
+                    </span>
+                    <span class="property-feature">
+                        <i class="fas fa-bath"></i>
+                        <span class="feature-value">${property.bathrooms} baths</span>
+                    </span>
+                    <span class="property-feature">
+                        <i class="fas fa-ruler-combined"></i>
+                        <span class="feature-value">${property.area}</span>
+                    </span>
                 </div>
-                ${featuresList.length > 0 ? `
-                    <div class="property-amenities">
-                        <i class="fas fa-star"></i>
-                        ${featuresList.join(' • ')}
-                    </div>
-                ` : ''}
-                <div class="property-type">${property.propertyType}</div>
-                <a href="/property-details/?P_RefId=${property.reference}&P_ApiId=${property.id}" 
-                   class="property-details-button">
-                    View Details
-                </a>
-        </div>
-      `;
+                <div class="property-location">
+                    <i class="fas fa-map-marker-alt"></i>
+                    <span class="location-text">${property.location}</span>
+                </div>
+                <a href="${property.viewDetails}" class="property-link">View Details</a>
+            </div>
+        `;
 
-        card.addEventListener('click', () => {
-            this.highlightProperty(property.id);
-            this.zoomToProperty(property.id);
+        // Add click handler to the card
+        card.addEventListener('click', (e) => {
+            // Don't trigger if clicking the "View Details" link
+            if (e.target.closest('.property-link')) {
+                return;
+            }
+
+            this.showPropertyOnMap(property);
         });
-        
+
         container.appendChild(card);
+        return card;
     }
 
-    highlightProperty(propertyId) {
-      if (this.highlightedProperty) {
-        const prevCard = document.querySelector(`.property-card[data-id="${this.highlightedProperty}"]`);
-        if (prevCard) {
-          prevCard.classList.remove('highlight');
-        }
-      }
-
-      const card = document.querySelector(`.property-card[data-id="${propertyId}"]`);
-      if (card) {
-        card.classList.add('highlight');
-        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-
-      this.highlightedProperty = propertyId;
-
-      const marker = this.propertyMarkers[propertyId];
-      if (marker) {
-        marker.openPopup();
-      }
-    }
-
-    zoomToProperty(propertyId) {
-      const property = this.properties.find(p => p.id === propertyId);
-      if (property) {
-        this.map.setView([property.latitude, property.longitude], 15);
+    showPropertyOnMap(property) {
+        // Validate coordinates before proceeding
+        const lat = parseFloat(property.latitude);
+        const lng = parseFloat(property.longitude);
         
-        const marker = this.propertyMarkers[propertyId];
+        if (isNaN(lat) || isNaN(lng) || 
+            lat < -90 || lat > 90 || 
+            lng < -180 || lng > 180) {
+            console.error('Invalid coordinates for property:', property.id, lat, lng);
+            return;
+        }
+
+        // Remove active class from all cards
+        document.querySelectorAll('.property-card').forEach(c => c.classList.remove('active'));
+        
+        // Add active class to clicked card
+        const card = document.querySelector(`.property-card[data-property-id="${property.id}"]`);
+        if (card) {
+            card.classList.add('active');
+        }
+
+        // Find the corresponding marker
+        const marker = this.markers.find(m => m.propertyId === property.id);
         if (marker) {
-          marker.openPopup();
-        }
-      }
-    }
-  }
+            try {
+                // Zoom to marker with animation
+                this.map.flyTo([lat, lng], 16, {
+                    duration: 1.5,
+                    easeLinearity: 0.25,
+                    essential: true // This animation is considered essential
+                });
 
-  // PropertyFilters Class
-  class PropertyFilters {
+                // Open popup after a short delay to ensure smooth animation
+                setTimeout(() => {
+                    marker.openPopup();
+                }, 1000);
+
+                // Highlight the marker
+                marker.setIcon(L.divIcon({
+                    className: 'custom-marker active',
+                    html: `<div class="price-marker">${this.formatPrice(property.price)}</div>`,
+                    iconSize: [120, 30],
+                    iconAnchor: [60, 15]
+                }));
+            } catch (error) {
+                console.error('Error flying to marker:', error);
+            }
+        } else {
+            console.warn('Marker not found for property:', property.id);
+        }
+    }
+}
+
+// Initialize the map when the DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    // Add error container if it doesn't exist
+    if (!document.getElementById('map-error')) {
+        const errorContainer = document.createElement('div');
+        errorContainer.id = 'map-error';
+        errorContainer.style.display = 'none';
+        errorContainer.style.padding = '20px';
+        errorContainer.style.margin = '20px';
+        errorContainer.style.border = '1px solid #ff0000';
+        errorContainer.style.color = '#ff0000';
+        const mapContainer = document.getElementById('map');
+        if (mapContainer) {
+            mapContainer.parentNode.insertBefore(errorContainer, mapContainer);
+        }
+    }
+
+    // Initialize only if not already initialized
+    if (!window.searchByMap) {
+        window.searchByMap = new SearchByMap();
+        const propertyFilters = new PropertyFilters();
+        propertyFilters.init();
+    }
+});
+
+// PropertyFilters Class
+class PropertyFilters {
     constructor() {
-      this.filters = {
-        propertyType: [],
-        location: [],
-        bedrooms: [],
-        bathrooms: [],
-        priceRange: {
-          min: 0,
-          max: 1000000
-        }
-      };
-      this.quickFilters = {
-        featured: false,
-        new: false,
-        reduced: false
-      };
+        this.filters = {
+            location: '',
+            propertyType: '',
+            minPrice: 0,
+            bedrooms: 0,
+            bathrooms: 0
+        };
+        this.apiUrl = 'https://solvistaproperty.com/wp-json/resales/v1/map-properties';
+        this.searchByMap = null;
     }
 
-    async init() {
-        await new Promise(resolve => {
-            if (document.readyState === 'complete') {
-                resolve();
+    init() {
+        this.setupEventListeners();
+        // Get reference to SearchByMap instance
+        this.searchByMap = window.searchByMap;
+        // Load initial filters from URL
+        this.loadFiltersFromUrl();
+    }
+
+    loadFiltersFromUrl() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const filters = {};
+        
+        if (urlParams.has('location')) filters.location = urlParams.get('location');
+        if (urlParams.has('propertyType')) filters.propertyType = urlParams.get('propertyType');
+        if (urlParams.has('minPrice')) filters.minPrice = parseInt(urlParams.get('minPrice'));
+        if (urlParams.has('bedrooms')) filters.bedrooms = parseInt(urlParams.get('bedrooms'));
+        if (urlParams.has('bathrooms')) filters.bathrooms = parseInt(urlParams.get('bathrooms'));
+
+        if (Object.keys(filters).length > 0) {
+            this.updateFilters(filters);
+            this.updateCheckboxesFromFilters(filters);
+        }
+    }
+
+    updateCheckboxesFromFilters(filters) {
+        // Update location checkboxes
+        if (filters.location) {
+            const locationCheckbox = document.querySelector(`input[name="location"][value="${filters.location}"]`);
+            if (locationCheckbox) {
+                locationCheckbox.checked = true;
+                this.updateSelectedText('location');
+            }
+        }
+
+        // Update property type checkboxes
+        if (filters.propertyType) {
+            const propertyTypeMap = {
+                '2-3': 'apartment',
+                '2-4': 'villa',
+                '2-5': 'townhouse',
+                '2-6': 'penthouse',
+                '2-7': 'plot',
+                '2-8': 'commercial'
+            };
+            const checkboxValue = propertyTypeMap[filters.propertyType];
+            if (checkboxValue) {
+                const propertyTypeCheckbox = document.querySelector(`input[name="property_type"][value="${checkboxValue}"]`);
+                if (propertyTypeCheckbox) {
+                    propertyTypeCheckbox.checked = true;
+                    this.updateSelectedText('property_type');
+                }
+            }
+        }
+
+        // Update price checkboxes
+        if (filters.minPrice !== undefined && filters.maxPrice !== undefined) {
+            const priceCheckbox = document.querySelector(`input[name="price"][value="${filters.minPrice}-${filters.maxPrice}"]`);
+            if (priceCheckbox) {
+                priceCheckbox.checked = true;
+                this.updateSelectedText('price');
+            }
+        }
+
+        // Update bedrooms checkboxes
+        if (filters.bedrooms) {
+            const bedroomsCheckbox = document.querySelector(`input[name="bedrooms"][value="${filters.bedrooms}"]`);
+            if (bedroomsCheckbox) {
+                bedroomsCheckbox.checked = true;
+                this.updateSelectedText('bedrooms');
+            }
+        }
+
+        // Update bathrooms checkboxes
+        if (filters.bathrooms) {
+            const bathroomsCheckbox = document.querySelector(`input[name="bathrooms"][value="${filters.bathrooms}"]`);
+            if (bathroomsCheckbox) {
+                bathroomsCheckbox.checked = true;
+                this.updateSelectedText('bathrooms');
+            }
+        }
+    }
+
+    updateFilters(newFilters) {
+        // Only update filters that are provided in newFilters
+        Object.keys(newFilters).forEach(key => {
+            if (newFilters[key] === undefined || newFilters[key] === null) {
+                delete this.filters[key];
             } else {
-                window.addEventListener('load', resolve);
+                this.filters[key] = newFilters[key];
             }
         });
-
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        this.setupFilterEventListeners();
+        
+        this.updateUrlParams();
+        this.loadProperties();
     }
 
-    applyFilters() {
-        const properties = window.searchByMap?.properties || [];
+    updateUrlParams() {
+        const urlParams = new URLSearchParams();
         
-        const filteredProperties = properties.filter(property => {
-            if (this.filters.propertyType.length > 0 && 
-                !this.filters.propertyType.includes(property.propertyType)) {
-                return false;
-            }
+        // Only add parameters that have actual values
+        if (this.filters.location) {
+            const locations = Array.isArray(this.filters.location) ? this.filters.location : [this.filters.location];
+            urlParams.set('location', locations.join(','));
+        }
+        if (this.filters.propertyType) {
+            const propertyTypes = Array.isArray(this.filters.propertyType) ? this.filters.propertyType : [this.filters.propertyType];
+            urlParams.set('propertyType', propertyTypes.join(','));
+        }
+        if (this.filters.minPrice > 0) urlParams.set('minPrice', this.filters.minPrice);
+        if (this.filters.bedrooms) {
+            const bedrooms = Array.isArray(this.filters.bedrooms) ? this.filters.bedrooms : [this.filters.bedrooms];
+            urlParams.set('bedrooms', bedrooms.join(','));
+        }
+        if (this.filters.bathrooms) {
+            const bathrooms = Array.isArray(this.filters.bathrooms) ? this.filters.bathrooms : [this.filters.bathrooms];
+            urlParams.set('bathrooms', bathrooms.join(','));
+        }
+
+        const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
+        window.history.pushState({}, '', newUrl);
+    }
+
+    async loadProperties() {
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const mainContainer = document.querySelector('.property-search-map');
+        const mapContainer = document.getElementById('map');
+        const propertyListing = document.querySelector('.property-listing-section');
+        const filtersSection = document.querySelector('.filters-section');
+        const quickFilters = document.querySelector('.quick-filters');
+        const advancedFilters = document.querySelector('.advanced-filters-panel');
+        const mobileFilters = document.querySelector('.mobile-filters-panel');
+
+        // Show loading states
+        if (loadingIndicator) {
+            loadingIndicator.classList.add('active');
+            loadingIndicator.innerHTML = `
+                <div class="loader-container">
+                    <div class="loader-spinner"></div>
+                    <div class="loader-text">Loading Properties</div>
+                    <div class="loader-subtext">Please wait while we fetch the latest listings...</div>
+                </div>
+            `;
+        }
+
+        // Add loading classes to containers
+        if (mainContainer) mainContainer.classList.add('loading');
+        if (mapContainer) mapContainer.classList.add('loading');
+        if (propertyListing) propertyListing.classList.add('loading');
+        if (filtersSection) filtersSection.classList.add('loading');
+        if (quickFilters) quickFilters.classList.add('loading');
+        if (advancedFilters) advancedFilters.classList.add('loading');
+        if (mobileFilters) mobileFilters.classList.add('loading');
+
+        // Add skeleton loading to property listing
+        if (propertyListing) {
+            propertyListing.innerHTML = `
+                <div class="skeleton-property-card"></div>
+                <div class="skeleton-property-card"></div>
+                <div class="skeleton-property-card"></div>
+            `;
+        }
+
+        try {
+            // Build API URL with filter parameters
+            const params = new URLSearchParams();
             
-            if (this.filters.location.length > 0 && 
-                !this.filters.location.includes(property.location)) {
-                return false;
+            // Only add parameters that have actual values
+            if (this.filters.location) {
+                const locations = Array.isArray(this.filters.location) ? this.filters.location : [this.filters.location];
+                params.set('Location', locations.join(','));
             }
-            
-            if (this.filters.bedrooms.length > 0 && 
-                !this.filters.bedrooms.includes(property.bedrooms)) {
-                return false;
+            if (this.filters.minPrice > 0) params.set('PMin', this.filters.minPrice);
+            if (this.filters.propertyType) {
+                const propertyTypes = Array.isArray(this.filters.propertyType) ? this.filters.propertyType : [this.filters.propertyType];
+                params.set('PropertyType', propertyTypes.join(','));
             }
-            
-            if (this.filters.bathrooms.length > 0 && 
-                !this.filters.bathrooms.includes(property.bathrooms)) {
-                return false;
+            if (this.filters.bedrooms) {
+                const bedrooms = Array.isArray(this.filters.bedrooms) ? this.filters.bedrooms : [this.filters.bedrooms];
+                params.set('Beds', bedrooms.join(','));
             }
-            
-            const price = parseFloat(property.price);
-            if (!isNaN(price) && 
-                (price < this.filters.priceRange.min || 
-                 price > this.filters.priceRange.max)) {
-                return false;
+            if (this.filters.bathrooms) {
+                const bathrooms = Array.isArray(this.filters.bathrooms) ? this.filters.bathrooms : [this.filters.bathrooms];
+                params.set('Baths', bathrooms.join(','));
             }
+
+            const apiUrl = `${this.apiUrl}?${params.toString()}`;
             
-            return true;
-        });
-        
-        if (window.searchByMap) {
-            window.searchByMap.properties = filteredProperties;
-            window.searchByMap.displayProperties();
+            const response = await fetch(apiUrl, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (!data || !Array.isArray(data)) {
+                throw new Error('API response is not in the expected format');
+            }
+
+            // Update SearchByMap properties and refresh display
+            if (this.searchByMap) {
+                this.searchByMap.properties = data.map(property => ({
+                    id: property.reference,
+                    reference: property.reference,
+                    title: `Property ${property.reference}`,
+                    price: property.price || 0,
+                    location: property.location || 'Location not specified',
+                    bedrooms: 0,
+                    bathrooms: 0,
+                    area: property.area || 'Area not specified',
+                    image: property.pictureUrl || '/wp-content/themes/oceanwp/assets/images/placeholder.jpg',
+                    status: 'For Sale',
+                    propertyType: 'Property',
+                    latitude: parseFloat(property.gps_x),
+                    longitude: parseFloat(property.gps_y),
+                    province: property.province,
+                    area: property.area,
+                    description: '',
+                    features: [],
+                    dateAdded: new Date().toISOString(),
+                    isFeatured: false,
+                    isNew: false,
+                    isReduced: false,
+                    viewDetails: property.propertyUrl || `/property/${property.reference}`
+                }));
+                this.searchByMap.displayProperties();
+            }
+        } catch (error) {
+            const errorContainer = document.getElementById('map-error');
+            if (errorContainer) {
+                errorContainer.innerHTML = `<p>Error loading properties: ${error.message}</p>`;
+                errorContainer.style.display = 'block';
+            }
+        } finally {
+            // Remove loading states
+            if (loadingIndicator) {
+                loadingIndicator.classList.remove('active');
+            }
+            if (mainContainer) mainContainer.classList.remove('loading');
+            if (mapContainer) mapContainer.classList.remove('loading');
+            if (propertyListing) propertyListing.classList.remove('loading');
+            if (filtersSection) filtersSection.classList.remove('loading');
+            if (quickFilters) quickFilters.classList.remove('loading');
+            if (advancedFilters) advancedFilters.classList.remove('loading');
+            if (mobileFilters) mobileFilters.classList.remove('loading');
         }
     }
 
-    setupFilterEventListeners() {
-        console.log('Setting up filter event listeners...');
-        
+    setupEventListeners() {
         // Get all custom selects
         const customSelects = document.querySelectorAll('.custom-select');
-        console.log('Found custom selects:', customSelects.length);
-        
-        customSelects.forEach((select, index) => {
-            console.log(`Processing select ${index + 1}:`, select);
-            
+        console.log(customSelects);
+        customSelects.forEach((select) => {
             const header = select.querySelector('.select-header');
             const dropdown = select.querySelector('.select-dropdown');
             const searchBox = select.querySelector('.search-box input');
             
-            console.log(`Select ${index + 1} elements:`, {
-                header: header ? 'Found' : 'Not Found',
-                dropdown: dropdown ? 'Found' : 'Not Found',
-                searchBox: searchBox ? 'Found' : 'Not Found'
-            });
-            
             if (header && dropdown) {
                 // Add click listener to header
                 header.addEventListener('click', (e) => {
-                    console.log('Header clicked!');
                     e.stopPropagation();
                     
                     // Close all other dropdowns
@@ -650,7 +1377,6 @@ class SearchByMap {
                     
                     // Toggle current dropdown
                     dropdown.classList.toggle('active');
-                    console.log('Dropdown active class toggled:', dropdown.classList.contains('active'));
                 });
             }
 
@@ -687,11 +1413,8 @@ class SearchByMap {
         
         // Location checkboxes
         const locationCheckboxes = document.querySelectorAll('input[name="location"]');
-        console.log('Found location checkboxes:', locationCheckboxes.length);
-        
         locationCheckboxes.forEach(checkbox => {
             checkbox.addEventListener('change', (e) => {
-                console.log('Location checkbox changed:', checkbox.id, checkbox.checked);
                 if (checkbox.id === 'location-all') {
                     const isChecked = checkbox.checked;
                     locationCheckboxes.forEach(cb => {
@@ -699,25 +1422,25 @@ class SearchByMap {
                             cb.checked = isChecked;
                         }
                     });
+                    this.updateFilters({ location: '' });
                 } else {
                     const allCheckbox = document.getElementById('location-all');
                     if (allCheckbox) {
                         allCheckbox.checked = false;
                     }
+                    const selectedLocations = Array.from(locationCheckboxes)
+                        .filter(cb => cb.checked && cb.id !== 'location-all')
+                        .map(cb => cb.value);
+                    this.updateFilters({ location: selectedLocations });
                 }
                 this.updateSelectedText('location');
-                this.applyFilters();
         });
       });
       
         // Property type checkboxes
         const propertyTypeCheckboxes = document.querySelectorAll('input[name="property_type"]');
-        console.log('Found property type checkboxes:', propertyTypeCheckboxes.length);
-        
         propertyTypeCheckboxes.forEach(checkbox => {
             checkbox.addEventListener('change', (e) => {
-                console.log('Property type checkbox changed:', checkbox.id, checkbox.checked);
-                
                 if (checkbox.id === 'property_type-all') {
                     const isChecked = checkbox.checked;
                     propertyTypeCheckboxes.forEach(cb => {
@@ -725,52 +1448,36 @@ class SearchByMap {
                             cb.checked = isChecked;
                         }
                     });
+                    this.updateFilters({ propertyType: '' });
       } else {
                     const allCheckbox = document.getElementById('property_type-all');
                     if (allCheckbox) {
                         allCheckbox.checked = false;
                     }
-
-                    // Handle parent-child relationship
-                    if (checkbox.checked) {
-                        // If a parent is checked, check all its children
-                        const parentValue = checkbox.value;
-                        propertyTypeCheckboxes.forEach(cb => {
-                            if (cb.dataset.parent === parentValue) {
-                                cb.checked = true;
-                            }
+                    const selectedTypes = Array.from(propertyTypeCheckboxes)
+                        .filter(cb => cb.checked && cb.id !== 'property_type-all')
+                        .map(cb => {
+                            const propertyTypeMap = {
+                                'apartment': '2-3',
+                                'villa': '2-4',
+                                'townhouse': '2-5',
+                                'penthouse': '2-6',
+                                'plot': '2-7',
+                                'commercial': '2-8'
+                            };
+                            return propertyTypeMap[cb.value] || cb.value;
                         });
-                    } else {
-                        // If a parent is unchecked, uncheck all its children
-                        const parentValue = checkbox.value;
-                        propertyTypeCheckboxes.forEach(cb => {
-                            if (cb.dataset.parent === parentValue) {
-                                cb.checked = false;
-                            }
-                        });
-
-                        // If a child is unchecked, uncheck its parent
-                        const childValue = checkbox.value;
-                        const parentCheckbox = propertyTypeCheckboxes.find(cb => 
-                            cb.value === checkbox.dataset.parent
-                        );
-                        if (parentCheckbox) {
-                            parentCheckbox.checked = false;
-                        }
-                    }
+                    this.updateFilters({ propertyType: selectedTypes });
                 }
                 this.updateSelectedText('property_type');
-                this.applyFilters();
             });
         });
 
         // Price checkboxes
         const priceCheckboxes = document.querySelectorAll('input[name="price"]');
-        console.log('Found price checkboxes:', priceCheckboxes.length);
         
         priceCheckboxes.forEach(checkbox => {
             checkbox.addEventListener('change', (e) => {
-                console.log('Price checkbox changed:', checkbox.id, checkbox.checked);
                 if (checkbox.id === 'price-all') {
                     const isChecked = checkbox.checked;
                     priceCheckboxes.forEach(cb => {
@@ -785,17 +1492,17 @@ class SearchByMap {
                     }
                 }
                 this.updateSelectedText('price');
-                this.applyFilters();
+                this.updateFilters({ 
+                    minPrice: parseInt(checkbox.value.split('-')[0]),
+                    maxPrice: parseInt(checkbox.value.split('-')[1])
+                });
             });
         });
 
         // Bedrooms checkboxes
         const bedroomsCheckboxes = document.querySelectorAll('input[name="bedrooms"]');
-        console.log('Found bedrooms checkboxes:', bedroomsCheckboxes.length);
-        
         bedroomsCheckboxes.forEach(checkbox => {
             checkbox.addEventListener('change', (e) => {
-                console.log('Bedrooms checkbox changed:', checkbox.id, checkbox.checked);
                 if (checkbox.id === 'bedrooms-all') {
                     const isChecked = checkbox.checked;
                     bedroomsCheckboxes.forEach(cb => {
@@ -803,112 +1510,72 @@ class SearchByMap {
                             cb.checked = isChecked;
                         }
                     });
+                    this.updateFilters({ bedrooms: 0 });
                 } else {
                     const allCheckbox = document.getElementById('bedrooms-all');
                     if (allCheckbox) {
                         allCheckbox.checked = false;
                     }
+                    const selectedBedrooms = Array.from(bedroomsCheckboxes)
+                        .filter(cb => cb.checked && cb.id !== 'bedrooms-all')
+                        .map(cb => parseInt(cb.value));
+                    this.updateFilters({ bedrooms: selectedBedrooms });
                 }
                 this.updateSelectedText('bedrooms');
-                this.applyFilters();
       });
     });
     
-        // Quick filters
-        const quickFilterButtons = document.querySelectorAll('.quick-filter-button');
-        quickFilterButtons.forEach(button => {
-            button.addEventListener('click', (e) => {
-                e.preventDefault();
-                button.classList.toggle('active');
-                this.applyFilters();
-      });
-    });
-    
-        // Close dropdowns when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.custom-select')) {
-                console.log('Clicked outside, closing all dropdowns');
-                customSelects.forEach(select => {
-                    const dropdown = select.querySelector('.select-dropdown');
-                    if (dropdown) {
-                        dropdown.classList.remove('active');
+        // Bathrooms checkboxes
+        const bathroomsCheckboxes = document.querySelectorAll('input[name="bathrooms"]');
+        bathroomsCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                if (checkbox.id === 'bathrooms-all') {
+                    const isChecked = checkbox.checked;
+                    bathroomsCheckboxes.forEach(cb => {
+                        if (cb.id !== 'bathrooms-all') {
+                            cb.checked = isChecked;
+                        }
+                    });
+                    this.updateFilters({ bathrooms: 0 });
+                } else {
+                    const allCheckbox = document.getElementById('bathrooms-all');
+                    if (allCheckbox) {
+                        allCheckbox.checked = false;
                     }
-                });
-            }
+                    const selectedBathrooms = Array.from(bathroomsCheckboxes)
+                        .filter(cb => cb.checked && cb.id !== 'bathrooms-all')
+                        .map(cb => parseInt(cb.value));
+                    this.updateFilters({ bathrooms: selectedBathrooms });
+                }
+                this.updateSelectedText('bathrooms');
+            });
         });
     }
 
     updateSelectedText(filterType) {
-        console.log('Updating selected text for:', filterType);
+        const select = document.querySelector(`.custom-select[data-filter="${filterType}"]`);
+        if (!select) return;
+
+        const header = select.querySelector('.select-header');
+        const checkboxes = select.querySelectorAll(`input[name="${filterType}"]:checked`);
         
-        const selectElement = document.querySelector(`.custom-select[data-filter="${filterType}"]`);
-        if (!selectElement) {
-            console.log('Select element not found for:', filterType);
-            return;
-        }
-
-        const selectedText = selectElement.querySelector('.selected-text');
-        if (!selectedText) {
-            console.log('Selected text element not found');
-            return;
-        }
-
-        const checkboxes = selectElement.querySelectorAll(`input[name="${filterType}"]:checked`);
-        const allCheckbox = selectElement.querySelector(`input[name="${filterType}"][id="${filterType}-all"]`);
-        
-        console.log('Found checkboxes:', {
-            total: checkboxes.length,
-            allChecked: allCheckbox?.checked
-        });
-
-        if (allCheckbox && allCheckbox.checked) {
-            selectedText.textContent = 'All';
-            return;
-        }
+        if (!header) return;
 
         if (checkboxes.length === 0) {
-            selectedText.textContent = `Choose ${filterType.replace('_', ' ')}`;
+            header.textContent = `All ${filterType.replace('_', ' ')}`;
             return;
         }
 
         const selectedValues = Array.from(checkboxes)
-            .filter(cb => cb.id !== `${filterType}-all`)
-            .map(cb => {
-                const label = document.querySelector(`label[for="${cb.id}"] span:last-child`);
-                return label ? label.textContent : cb.value;
-            });
+            .filter(checkbox => !checkbox.id.includes('-all'))
+            .map(checkbox => checkbox.value);
 
-        console.log('Selected values:', selectedValues);
-
-        if (selectedValues.length === 1) {
-            selectedText.textContent = selectedValues[0];
+        if (selectedValues.length === 0) {
+            header.textContent = `All ${filterType.replace('_', ' ')}`;
+        } else if (selectedValues.length === 1) {
+            header.textContent = selectedValues[0];
         } else {
-            selectedText.textContent = `${selectedValues.length} selected`;
+            header.textContent = `${selectedValues.length} selected`;
         }
     }
 }
-
-// Global initialization flag
-let isInitialized = false;
-
-// Initialize the application
-const initializeApp = async () => {
-    if (isInitialized) {
-        return;
-    }
-
-    try {
-        window.searchByMap = new SearchByMap();
-        await window.searchByMap.initialize();
-        
-        window.propertyFilters = new PropertyFilters();
-        await window.propertyFilters.init();
-
-        isInitialized = true;
-    } catch (error) {
-        throw error;
-    }
-};
-
-// Start initialization when DOM is ready
-document.addEventListener('DOMContentLoaded', initializeApp);
