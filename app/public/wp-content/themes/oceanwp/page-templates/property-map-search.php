@@ -1,6 +1,6 @@
 <?php
 /**
- * Template Name: Property final v2
+ * Template Name: Property final v3
  * Template Post Type: page
  * 
  * This is the main template for the property search map functionality.
@@ -22,7 +22,6 @@ get_header();
 
 <!-- Add Font Awesome for icons -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
-<
 
 <!-- Add Leaflet CSS -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />

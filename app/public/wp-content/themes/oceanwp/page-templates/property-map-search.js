@@ -14,6 +14,20 @@ const globalFilters = {
     advanced: {}
 };
 
+// Add city coordinates at the top of the file
+const cityCoordinates = {
+    'Málaga': { lat: 36.7213, lng: -4.4217 },
+    'Marbella': { lat: 36.5101, lng: -4.8824 },
+    'Estepona': { lat: 36.4276, lng: -5.1459 },
+    'Fuengirola': { lat: 36.5418, lng: -4.6243 },
+    'Mijas': { lat: 36.5957, lng: -4.6375 },
+    'Benalmadena': { lat: 36.5957, lng: -4.5725 },
+    'Torremolinos': { lat: 36.6204, lng: -4.4998 },
+    'Antequera': { lat: 37.0194, lng: -4.5612 },
+    'Ronda': { lat: 36.7428, lng: -5.1666 },
+    'Sotogrande': { lat: 36.2833, lng: -5.2833 }
+};
+
 // Property Search Map Script
 class SearchByMap {
     constructor(config = {}) {
@@ -34,6 +48,11 @@ class SearchByMap {
         this.initialized = false;
         this.tooltipContainer = null;
         this.closeButton = null;
+        this.currentBounds = null;
+        this.visibleCities = new Set();
+        this.debounceTimer = null;
+        this.debounceDelay = 1000; // 1 second debounce
+        this.isMapUpdating = false;
     }
 
     async initialize() {
@@ -177,6 +196,10 @@ class SearchByMap {
                 this.markerCluster.options.disableClusteringAtZoom = 16;
             }
         });
+
+        // Add debounced event listeners for map movement and zoom
+        this.map.on('moveend', () => this.debouncedCheckVisibleCities());
+        this.map.on('zoomend', () => this.debouncedCheckVisibleCities());
     }
 
     getRandomSpainCoordinates() {
@@ -1491,6 +1514,85 @@ class SearchByMap {
             panel.classList.remove('active');
         });
     }
+
+    debouncedCheckVisibleCities() {
+        if (this.isMapUpdating) return;
+
+        // Clear any existing timer
+        if (this.debounceTimer) {
+            clearTimeout(this.debounceTimer);
+        }
+
+        // Set new timer
+        this.debounceTimer = setTimeout(() => {
+            this.checkVisibleCities();
+        }, this.debounceDelay);
+    }
+
+    checkVisibleCities() {
+        if (!this.map || this.isMapUpdating) return;
+
+        const bounds = this.map.getBounds();
+        const newVisibleCities = new Set();
+
+        // Check each city's coordinates against the current map bounds
+        Object.entries(cityCoordinates).forEach(([city, coords]) => {
+            const latLng = L.latLng(coords.lat, coords.lng);
+            if (bounds.contains(latLng)) {
+                newVisibleCities.add(city);
+            }
+        });
+
+        // If visible cities have changed, update filters
+        if (this.visibleCities.size !== newVisibleCities.size || 
+            ![...this.visibleCities].every(city => newVisibleCities.has(city))) {
+            
+            this.visibleCities = newVisibleCities;
+            this.updateFiltersFromVisibleCities();
+        }
+    }
+
+    updateFiltersFromVisibleCities() {
+        if (this.visibleCities.size === 0 || this.isMapUpdating) return;
+
+        // Set updating state
+        this.isMapUpdating = true;
+        
+        // Show global loader
+        const globalLoader = document.querySelector('.global-loader');
+        if (globalLoader) {
+            globalLoader.style.display = 'flex';
+            const loaderText = globalLoader.querySelector('.global-loader-text');
+            const loaderSubtext = globalLoader.querySelector('.global-loader-subtext');
+            if (loaderText) loaderText.textContent = 'Updating Map';
+            if (loaderSubtext) loaderSubtext.textContent = 'Please wait while we update the visible properties...';
+        }
+
+        // Convert Set to Array for the filter
+        const visibleCitiesArray = Array.from(this.visibleCities);
+        
+        // Update global filters
+        globalFilters.location = visibleCitiesArray;
+        
+        // Update checkboxes
+        document.querySelectorAll('input[name="location"]').forEach(checkbox => {
+            checkbox.checked = visibleCitiesArray.includes(checkbox.value);
+        });
+
+        // Update URL and reload properties
+        this.updateUrlWithFilters();
+        
+        // Load properties and hide loading indicator when done
+        this.loadProperties(1).finally(() => {
+            this.isMapUpdating = false;
+            if (globalLoader) {
+                globalLoader.style.display = 'none';
+            }
+        });
+        
+        // Update selected text
+        this.updateSelectedText('location');
+    }
 }
 
 // Initialize the map when the DOM is loaded
@@ -1911,3 +2013,13 @@ class PropertyFilters {
         });
     }
 }
+
+// Add CSS animation for the spinner
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+`;
+document.head.appendChild(style);
