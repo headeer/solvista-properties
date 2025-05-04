@@ -4,6 +4,8 @@ const globalFilters = {
     propertyType: '',
     minPrice: 0,
     maxPrice: 0,
+    minSize: 0,
+    maxSize: 0,
     bedrooms: 0,
     bathrooms: 0,
     beach: false,
@@ -11,22 +13,131 @@ const globalFilters = {
     exclusive: false,
     modern: false,
     new: false,
+    seaview: false,
+    investment: false,
+    minBuilt: 0,
+    features: '',
+    sortOrder: 'default',
     advanced: {}
 };
+
+// Add sorting options
+const sortOptions = {
+    'default': { label: 'Default', fn: (a, b) => 0 },
+    'price-asc': { label: 'Price (Low to High)', fn: (a, b) => parseInt(a.price || 0) - parseInt(b.price || 0) },
+    'price-desc': { label: 'Price (High to Low)', fn: (a, b) => parseInt(b.price || 0) - parseInt(a.price || 0) },
+    'size-asc': { label: 'Size (Small to Large)', fn: (a, b) => parseInt(a.propertySize || 0) - parseInt(b.propertySize || 0) },
+    'size-desc': { label: 'Size (Large to Small)', fn: (a, b) => parseInt(b.propertySize || 0) - parseInt(a.propertySize || 0) },
+    'newest': { label: 'Newest First', fn: (a, b) => new Date(b.dateAdded || 0) - new Date(a.dateAdded || 0) }
+};
+
+// Add debug mode
+const DEBUG = true;
+
+// Helper function for logging
+function debug(...args) {
+    if (DEBUG) {
+        console.log(...args);
+    }
+}
+
+// Debounce helper function
+function debounce(func, wait) {
+    let timeout;
+    return function(...args) {
+        const context = this;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(context, args), wait);
+    };
+}
 
 // Add city coordinates at the top of the file
 const cityCoordinates = {
     'Málaga': { lat: 36.7213, lng: -4.4217 },
     'Marbella': { lat: 36.5101, lng: -4.8824 },
-    'Estepona': { lat: 36.4276, lng: -5.1459 },
-    'Fuengirola': { lat: 36.5418, lng: -4.6243 },
-    'Mijas': { lat: 36.5957, lng: -4.6375 },
-    'Benalmadena': { lat: 36.5957, lng: -4.5725 },
-    'Torremolinos': { lat: 36.6204, lng: -4.4998 },
-    'Antequera': { lat: 37.0194, lng: -4.5612 },
-    'Ronda': { lat: 36.7428, lng: -5.1666 },
-    'Sotogrande': { lat: 36.2833, lng: -5.2833 }
+    'Estepona': { lat: 36.4182, lng: -5.1456 },
+    'Fuengirola': { lat: 36.5394, lng: -4.6245 },
+    'Mijas': { lat: 36.5956, lng: -4.6378 },
+    'Benalmadena': { lat: 36.5982, lng: -4.5148 },
+    'Torremolinos': { lat: 36.6177, lng: -4.5005 },
+    'Antequera': { lat: 37.0196, lng: -4.5599 },
+    'Ronda': { lat: 36.7465, lng: -5.1651 },
+    'Sotogrande': { lat: 36.2814, lng: -5.2714 }
 };
+
+// Add this at the top of the file, after the globalFilters object
+const featureMap = {
+    'Beachfront': '1Setting1',
+    'Frontline Golf': '1Setting2',
+    'Town': '1Setting3',
+    'Suburban': '1Setting4',
+    'Country': '1Setting5',
+    'Commercial Area': '1Setting6',
+    'Beachside': '1Setting7',
+    'Port': '1Setting8',
+    'Village': '1Setting9',
+    'Mountain Pueblo': '1Setting10',
+    'Close To Golf': '1Setting11',
+    'Close To Port': '1Setting12',
+    'Close To Shops': '1Setting13',
+    'Close To Sea': '1Setting14',
+    'Close To Town': '1Setting15',
+    'Close To Schools': '1Setting16',
+    'Close To Skiing': '1Setting17',
+    'Close To Forest': '1Setting18',
+    'Marina': '1Setting19',
+    'Close To Marina': '1Setting20',
+    'Urbanisation': '1Setting21',
+    'Front Line Beach Complex': '1Setting22',
+    
+    // Pool features
+    'Communal Pool': '1Pool1',
+    'Private Pool': '1Pool2',
+    'Indoor Pool': '1Pool3',
+    'Heated Pool': '1Pool4',
+    'Room For Pool': '1Pool5',
+    'Childrens Pool': '1Pool6'
+};
+
+// Add CSS for sorting dropdown
+function addSortingStyles() {
+    const style = document.createElement('style');
+    style.textContent = `
+        .property-sorting-toolbar {
+            display: flex;
+            justify-content: flex-end;
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        
+        .sorting-container {
+            display: flex;
+            align-items: center;
+        }
+        
+        .sorting-container label {
+            margin-right: 10px;
+            font-weight: 500;
+        }
+        
+        .sorting-dropdown {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+            cursor: pointer;
+            min-width: 180px;
+        }
+        
+        .sorting-dropdown:focus {
+            outline: none;
+            border-color: #0073aa;
+        }
+    `;
+    document.head.appendChild(style);
+}
 
 // Property Search Map Script
 class SearchByMap {
@@ -53,6 +164,21 @@ class SearchByMap {
         this.debounceTimer = null;
         this.debounceDelay = 1000; // 1 second debounce
         this.isMapUpdating = false;
+        
+        // Store instance in window object for global access
+        window.searchByMap = this;
+        
+        // Create debounced version of loadProperties that returns a Promise
+        this.debouncedLoadProperties = (page) => {
+            return new Promise((resolve, reject) => {
+                clearTimeout(this.debounceTimer);
+                this.debounceTimer = setTimeout(() => {
+                    this.loadProperties(page)
+                        .then(resolve)
+                        .catch(reject);
+                }, 300);
+            });
+        };
     }
 
     async initialize() {
@@ -61,31 +187,26 @@ class SearchByMap {
         }
 
         try {
+            debug('Initializing SearchByMap');
             await this.loadScripts();
+            
+            // Add sorting styles
+            addSortingStyles();
+            
             this.initMap();
             this.setupFilterControls();
             this.initializeQuickFilters();
-            this.initializeAdvancedFilters();
             this.setupEventListeners();
-
-            // Only load properties if there are active filters
-            if (Object.keys(globalFilters).some(key => {
-                if (key === 'advanced') {
-                    return globalFilters.advanced && Object.keys(globalFilters.advanced).length > 0;
-                }
-                return globalFilters[key] && globalFilters[key] !== 'null' && globalFilters[key] !== 0;
-            })) {
-                await this.loadProperties(1);
-            }
-
+            
+            // Initialize the max price filter manually
+            this.initializeMaxPriceFilter();
+            
+            // Always load properties with default location
+            await this.loadProperties(1);
+            
             this.initialized = true;
         } catch (error) {
             console.error('Error initializing map:', error);
-            const errorContainer = document.getElementById('map-error');
-            if (errorContainer) {
-                errorContainer.innerHTML = `<p>Error initializing map: ${error.message}</p>`;
-                errorContainer.style.display = 'block';
-            }
         }
     }
 
@@ -134,11 +255,13 @@ class SearchByMap {
         // Initialize map with Costa del Sol coordinates
         this.map = L.map('map', {
             center: L.latLng(36.7213, -4.4217), // Costa del Sol coordinates
-            zoom: 12, // Increased initial zoom level
+            zoom: 14, // Increased initial zoom level
             zoomControl: true,
-            minZoom: 8,
+            minZoom: 11, // Higher min zoom level to prevent excessive zoom out
             maxZoom: 19, // Increased max zoom for more detail
-            crs: L.CRS.EPSG3857 // Explicitly set the coordinate reference system
+            crs: L.CRS.EPSG3857, // Explicitly set the coordinate reference system
+            scrollWheelZoom: 'center', // Center-focused zoom with scroll wheel
+            wheelDebounceTime: 100 // Add debounce to wheel zooming
         });
 
         // Add OpenStreetMap tile layer
@@ -146,6 +269,13 @@ class SearchByMap {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
             maxZoom: 19
         }).addTo(this.map);
+
+        // Prevent zoom out beyond minZoom
+        this.map.on('zoomend', () => {
+            if (this.map.getZoom() < 11) {
+                this.map.setZoom(11);
+            }
+        });
 
         // Initialize marker cluster group with improved settings
         this.markerCluster = L.markerClusterGroup({
@@ -215,24 +345,96 @@ class SearchByMap {
         };
     }
 
-    getApiUrl() {
-        const params = new URLSearchParams({
-            Location: globalFilters.location || '',
-            PMin: globalFilters.minPrice || 0,
-            PMax: globalFilters.maxPrice || 1000000,
-            PropertyType: globalFilters.propertyType || '',
-            Beds: globalFilters.bedrooms || 0,
-            Baths: globalFilters.bathrooms || 0
-        });
-
+    getApiUrl(page = 1) {
+        const params = new URLSearchParams();
+        
+        // Add location filter
+        if (globalFilters.location) {
+            params.append('Location', globalFilters.location);
+        }
+        
+        // Add property type filter
+        if (globalFilters.propertyType) {
+            params.append('PropertyType', globalFilters.propertyType);
+        }
+        
+        // Add price range filters
+        if (globalFilters.minPrice > 0) {
+            params.append('PMin', globalFilters.minPrice);
+        }
+        if (globalFilters.maxPrice > 0) {
+            params.append('PMax', globalFilters.maxPrice);
+        }
+        
+        // Add size range filters
+        if (globalFilters.minSize > 0) {
+            params.append('MinSize', globalFilters.minSize);
+        }
+        if (globalFilters.maxSize > 0) {
+            params.append('MaxSize', globalFilters.maxSize);
+        }
+        
+        // Add bedrooms filter
+        if (globalFilters.bedrooms > 0) {
+            params.append('Beds', globalFilters.bedrooms);
+        }
+        
+        // Add bathrooms filter
+        if (globalFilters.bathrooms > 0) {
+            params.append('Baths', globalFilters.bathrooms);
+        }
+        
+        // Add features filter
+        if (globalFilters.features) {
+            params.append('features', globalFilters.features);
+        }
+        
+        // Add min built size filter - use MinSize instead
+        if (globalFilters.minBuilt > 0) {
+            params.append('MinSize', globalFilters.minBuilt);
+        }
+        
+        // Add sort order filter
+        if (globalFilters.sortOrder) {
+            params.append('SortOrder', globalFilters.sortOrder);
+        }
+        
+        // Add quick filters
+        if (globalFilters.beach) {
+            params.append('Beach', '1');
+        }
+        if (globalFilters.golf) {
+            params.append('Golf', '1');
+        }
+        if (globalFilters.exclusive) {
+            params.append('Exclusive', '1');
+        }
+        if (globalFilters.new) {
+            params.append('New', '1');
+        }
+        if (globalFilters.seaview) {
+            params.append('Seaview', '1');
+        }
+        if (globalFilters.investment) {
+            params.append('Investment', '1');
+        }
+        
+        // Add pagination
+        params.append('page', page);
+        
         return `${this.config.apiUrl}?${params.toString()}`;
     }
 
     async loadProperties(page = 1) {
         this.currentPage = page;
-        console.log('loadProperties', page);
+        debug('Loading properties, page:', page);
         
         try {
+            // Show loader
+            if (window.showGlobalLoader) {
+                window.showGlobalLoader();
+            }
+
             // Build API URL with filter parameters using correct case
             const params = new URLSearchParams();
 
@@ -249,8 +451,20 @@ class SearchByMap {
                     params.set('PropertyType', propertyTypes.join(','));
                 }
             }
+            
+            // Ensure both minPrice and maxPrice are properly set
             if (globalFilters.minPrice > 0) params.set('PMin', globalFilters.minPrice);
             if (globalFilters.maxPrice > 0) params.set('PMax', globalFilters.maxPrice);
+            
+            // Add size parameters
+            if (globalFilters.minSize > 0) params.set('MinSize', globalFilters.minSize);
+            if (globalFilters.maxSize > 0) params.set('MaxSize', globalFilters.maxSize);
+            
+            // Handle minBuilt as MinSize if minSize is not set
+            if (globalFilters.minSize === 0 && globalFilters.minBuilt > 0) {
+                params.set('MinSize', globalFilters.minBuilt);
+            }
+            
             if (globalFilters.bedrooms) {
                 const bedrooms = Array.isArray(globalFilters.bedrooms) ? globalFilters.bedrooms : [globalFilters.bedrooms];
                 if (bedrooms.length > 0) {
@@ -270,18 +484,15 @@ class SearchByMap {
             if (globalFilters.exclusive) params.set('Exclusive', 'true');
             if (globalFilters.modern) params.set('Modern', 'true');
             if (globalFilters.new) params.set('New', 'true');
+            if (globalFilters.seaview) params.set('SeaView', 'true');
+            if (globalFilters.investment) params.set('Investment', 'true');
 
             // Add advanced filters with correct parameter names
-            if (globalFilters.advanced) {
-                Object.entries(globalFilters.advanced).forEach(([filterKey, value]) => {
-                    if (value === true) {
-                        params.set(`Filter_${filterKey}`, 'true');
-                    }
-                });
-            }
+            if (globalFilters.features && globalFilters.features !== 'any') params.set('Features', globalFilters.features);
+            if (globalFilters.sortOrder && globalFilters.sortOrder !== 'default') params.set('SortOrder', globalFilters.sortOrder);
 
             const apiUrl = `${this.config.apiUrl}?${params.toString()}`;
-            console.log('API URL:', apiUrl);
+            debug('API URL:', apiUrl);
 
             const response = await fetch(apiUrl, {
                 method: 'GET',
@@ -303,19 +514,17 @@ class SearchByMap {
 
             // Process properties
             this.properties = this.processProperties(data);
-
-            if (this.properties.length === 0) {
-                throw new Error('No properties found');
-            }
-
             this.totalPages = Math.ceil(this.properties.length / this.config.itemsPerPage);
             this.displayProperties();
         } catch (error) {
             console.error('Error loading properties:', error);
-            const errorContainer = document.getElementById('map-error');
-            if (errorContainer) {
-                errorContainer.innerHTML = `<p>Error loading properties: ${error.message}</p>`;
-                errorContainer.style.display = 'block';
+            this.properties = [];
+            this.totalPages = 0;
+            this.displayProperties();
+        } finally {
+            // Hide loader
+            if (window.hideGlobalLoader) {
+                window.hideGlobalLoader();
             }
         }
     }
@@ -348,12 +557,15 @@ class SearchByMap {
 
             // Add a small random offset to markers at the same location
             const offset = count > 0 ? {
-                lat: (Math.random() - 0.5) * 0.015, // ~100 meters max offset
-                lng: (Math.random() - 0.5) * 0.015  // ~100 meters max offset
+                lat: (Math.random() - 0.5) * 0.015,
+                lng: (Math.random() - 0.5) * 0.015
             } : { lat: 0, lng: 0 };
 
             // Create marker with validated coordinates and offset
             const markerLatLng = [latitude + offset.lat, longitude + offset.lng];
+
+            // Construct the property URL
+            const propertyUrl = `/property/${property.reference}`;
 
             return {
                 id: property.reference,
@@ -361,23 +573,22 @@ class SearchByMap {
                 title: `Property ${property.reference}`,
                 price: property.price || 0,
                 location: property.location || 'Location not specified',
-                bedrooms: property.bedrooms || "",
-                bathrooms: property.bathrooms || "",
-                area: property.area || 'Area not specified',
+                beds: property.beds || "",
+                baths: property.baths || "",
+                propertySize: property.propertySize || '',
                 image: property.pictureUrl,
                 status: 'For Sale',
                 propertyType: 'Property',
                 latitude: markerLatLng[0],
                 longitude: markerLatLng[1],
                 province: property.province,
-                area: property.area,
                 description: '',
                 features: [],
                 dateAdded: new Date().toISOString(),
                 isFeatured: false,
                 isNew: false,
                 isReduced: false,
-                viewDetails: property.propertyUrl || `/property/${property.reference}`
+                url: propertyUrl // Use the constructed URL
             };
         });
     }
@@ -388,13 +599,12 @@ class SearchByMap {
             this.markerCluster.clearLayers();
         }
         this.markers = [];
-
+        
         // Get or create properties container
-        let container = document.querySelector('.properties-container');
+        let container = document.querySelector('.property-list');
         if (!container) {
             container = document.createElement('div');
-            container.className = 'properties-container';
-
+            container.className = 'property-list';
             const mapContainer = document.getElementById('map');
             if (mapContainer) {
                 mapContainer.parentNode.insertBefore(container, mapContainer.nextSibling);
@@ -404,28 +614,37 @@ class SearchByMap {
             }
         }
 
-        // Create property listing section
-        let listingSection = document.querySelector('.property-listing-section');
-        if (!listingSection) {
-            listingSection = document.createElement('div');
-            listingSection.className = 'property-listing-section';
-            container.appendChild(listingSection);
+        // Clear existing content
+        container.innerHTML = '';
+
+        // Update results count
+        const resultsCount = document.getElementById('results-count');
+        if (resultsCount) {
+            resultsCount.textContent = this.properties.length;
         }
 
-        // Clear existing content
-        listingSection.innerHTML = '';
+        if (this.properties.length === 0) {
+            // Display no properties message
+            const noProperties = document.createElement('div');
+            noProperties.className = 'no-properties-message';
+            noProperties.innerHTML = `
+                <i class="fas fa-search"></i>
+                <h3>No Properties Found</h3>
+                <p>Try adjusting your search filters</p>
+            `;
+            container.appendChild(noProperties);
+            return;
+        }
 
-        // Create header
-        const header = document.createElement('h2');
-        header.textContent = `${this.properties.length} Properties Found`;
-        listingSection.appendChild(header);
+        // Sort properties based on selected sort order
+        this.sortProperties();
 
         // Create properties grid
         const propertiesGrid = document.createElement('div');
         propertiesGrid.className = 'properties-grid';
-        listingSection.appendChild(propertiesGrid);
-
-        // Add new markers only if map and markerCluster are initialized
+        container.appendChild(propertiesGrid);
+        
+        // Add new markers and create property cards
         if (this.map && this.markerCluster) {
             this.properties.forEach(property => {
                 try {
@@ -446,7 +665,7 @@ class SearchByMap {
                             className: 'custom-marker',
                             html: `<div class="price-marker">${this.formatPrice(property.price)}</div>`,
                             iconSize: [56,19],
-                            iconAnchor: [60, 15]
+                            iconAnchor: [28, 38] // Adjusted to position marker lower
                         })
                     });
 
@@ -455,7 +674,7 @@ class SearchByMap {
                     // Create popup content
                     const popupContent = this.createPropertyPopup(property);
                     marker.bindPopup(popupContent, {
-                        offset: L.point(0, -15),
+                        offset: L.point(0, -150), // Adjusted to position popup lower
                         className: 'property-popup',
                         maxWidth: 300,
                         minWidth: 200
@@ -475,31 +694,97 @@ class SearchByMap {
                     console.error(`Error creating marker for property ${property.id}:`, error);
                 }
             });
-
-            // Update map bounds to show all markers with padding
-            if (this.markers.length > 0) {
-                try {
-                    const group = new L.featureGroup(this.markers);
-                    const bounds = group.getBounds();
-
-                    // Add padding and set max zoom level
-                    this.map.fitBounds(bounds, {
-                        padding: [50, 50],
-                        maxZoom: 12,
-                        animate: true
-                    });
-                } catch (error) {
-                    console.error('Error setting map bounds:', error);
-                }
-            }
         } else {
             console.warn('Map or markerCluster not initialized, skipping marker creation');
+            this.properties.forEach(property => {
+                this.createPropertyCard(property, propertiesGrid);
+            });
+        }
+    }
+
+    // New method to sort properties
+    sortProperties() {
+        if (!this.properties || this.properties.length === 0) return;
+
+        debug('Sorting properties by:', globalFilters.sortOrder);
+        
+        // Get sorting function from options
+        const sortOption = sortOptions[globalFilters.sortOrder] || sortOptions.default;
+        
+        // Apply sorting
+        this.properties.sort(sortOption.fn);
+        
+        debug('Sorted properties:', this.properties.length);
+    }
+
+    // New method to create sorting dropdown
+    createSortingDropdown(container) {
+        // Check if sorting dropdown already exists
+        if (document.getElementById('property-sorting-dropdown')) return;
+        
+        // Create sorting toolbar
+        const sortingToolbar = document.createElement('div');
+        sortingToolbar.className = 'property-sorting-toolbar';
+        sortingToolbar.innerHTML = `
+            <div class="sorting-container">
+                <label for="property-sorting-dropdown">Sort By:</label>
+                <select id="property-sorting-dropdown" class="sorting-dropdown">
+                    ${Object.entries(sortOptions).map(([key, option]) => 
+                        `<option value="${key}" ${globalFilters.sortOrder === key ? 'selected' : ''}>${option.label}</option>`
+                    ).join('')}
+                </select>
+            </div>
+        `;
+        
+        // Insert before the properties grid
+        const propertiesGrid = container.querySelector('.properties-grid');
+        if (propertiesGrid) {
+            container.insertBefore(sortingToolbar, propertiesGrid);
+        } else {
+            container.appendChild(sortingToolbar);
+        }
+        
+        // Add event listener to dropdown
+        const sortingDropdown = document.getElementById('property-sorting-dropdown');
+        if (sortingDropdown) {
+            sortingDropdown.addEventListener('change', (e) => {
+                const newSortOrder = e.target.value;
+                debug('Sort order changed to:', newSortOrder);
+                
+                // Update global filter
+                globalFilters.sortOrder = newSortOrder;
+                
+                // Sort properties and update display without fetching from API
+                this.sortProperties();
+                
+                // Just redisplay the properties without making an API call
+                const container = document.querySelector('.property-list');
+                if (container) {
+                    const propertiesGrid = container.querySelector('.properties-grid');
+                    if (propertiesGrid) {
+                        // Clear existing property cards
+                        propertiesGrid.innerHTML = '';
+                        
+                        // Create property cards with sorted properties
+                        this.properties.forEach(property => {
+                            this.createPropertyCard(property, propertiesGrid);
+                        });
+                    }
+                }
+                
+                // Update URL with new sort order
+                this.updateUrlWithFilters();
+            });
         }
     }
 
     updateFilters(newFilters) {
+        debug('Updating filters:', newFilters);
+
         // Show loading indicator
-        this.showLoadingIndicator();
+        if (window.showGlobalLoader) {
+            window.showGlobalLoader();
+        }
 
         // Only update filters that are provided in newFilters
         Object.keys(newFilters).forEach(key => {
@@ -513,11 +798,28 @@ class SearchByMap {
         // Update URL parameters
         this.updateUrlWithFilters();
         
-        // Reload properties with the updated filters
-        this.loadProperties(1).finally(() => {
-            // Hide loading indicator when properties are loaded
-            this.hideLoadingIndicator();
-        });
+        // Use the SearchByMap instance to load properties
+        if (this.searchByMap) {
+            this.searchByMap.debouncedLoadProperties(1)
+                .then(() => {
+                    // Hide loading indicator when properties are loaded
+                    if (window.hideGlobalLoader) {
+                        window.hideGlobalLoader();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading properties:', error);
+                    // Hide loading indicator even if there's an error
+                    if (window.hideGlobalLoader) {
+                        window.hideGlobalLoader();
+                    }
+                });
+        } else {
+            console.error('SearchByMap instance not found');
+            if (window.hideGlobalLoader) {
+                window.hideGlobalLoader();
+            }
+        }
     }
 
     showLoadingIndicator() {
@@ -575,13 +877,20 @@ class SearchByMap {
                 key === 'PropertyType' ||
                 key === 'PMin' ||
                 key === 'PMax' ||
+                key === 'MinSize' ||
+                key === 'MaxSize' ||
                 key === 'Beds' ||
                 key === 'Baths' ||
                 key === 'beach' ||
                 key === 'golf' ||
                 key === 'exclusive' ||
                 key === 'modern' ||
-                key === 'new') {
+                key === 'new' ||
+                key === 'seaview' ||
+                key === 'investment' ||
+                key === 'min-built' ||
+                key === 'features' ||
+                key === 'sort') {
                 urlParams.delete(key);
             }
         }
@@ -592,15 +901,22 @@ class SearchByMap {
         if (globalFilters.exclusive) urlParams.set('exclusive', 'true');
         if (globalFilters.modern) urlParams.set('modern', 'true');
         if (globalFilters.new) urlParams.set('new', 'true');
+        if (globalFilters.seaview) urlParams.set('seaview', 'true');
+        if (globalFilters.investment) urlParams.set('investment', 'true');
 
         // Add advanced filters to URL (only if true)
-        if (globalFilters.advanced) {
-            Object.entries(globalFilters.advanced).forEach(([filterKey, value]) => {
-                if (value === true) {
-                    urlParams.set(`filter_${filterKey}`, 'true');
-                }
-            });
+        if (globalFilters.minBuilt > 0) {
+            urlParams.set('MinSize', globalFilters.minBuilt);
+        } else if (globalFilters.minSize > 0) {
+            urlParams.set('MinSize', globalFilters.minSize);
         }
+        
+        if (globalFilters.maxSize > 0) {
+            urlParams.set('MaxSize', globalFilters.maxSize);
+        }
+        
+        if (globalFilters.features && globalFilters.features !== 'any') urlParams.set('features', globalFilters.features);
+        if (globalFilters.sortOrder && globalFilters.sortOrder !== 'default') urlParams.set('sort', globalFilters.sortOrder);
 
         // Add other filters with correct case and comma separation for multiple values
         if (globalFilters.location) {
@@ -620,6 +936,12 @@ class SearchByMap {
         }
         if (globalFilters.maxPrice > 0) {
             urlParams.set('PMax', globalFilters.maxPrice);
+        }
+        if (globalFilters.minSize > 0) {
+            urlParams.set('MinSize', globalFilters.minSize);
+        }
+        if (globalFilters.maxSize > 0) {
+            urlParams.set('MaxSize', globalFilters.maxSize);
         }
         if (globalFilters.bedrooms) {
             const bedrooms = Array.isArray(globalFilters.bedrooms) ? globalFilters.bedrooms : [globalFilters.bedrooms];
@@ -676,46 +998,25 @@ class SearchByMap {
                 });
             }
 
-            // Advanced Filters Toggle
-            const advancedToggle = document.querySelector('.advanced-filters-toggle .toggle-button');
-            const advancedPanel = document.querySelector('.advanced-filters-panel');
-
-            if (advancedToggle && advancedPanel) {
-                advancedToggle.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    advancedPanel.classList.toggle('active');
-                    advancedToggle.closest('.advanced-filters-toggle').classList.toggle('active');
-                });
-
-                // Close dropdown when clicking outside
-                document.addEventListener('click', (e) => {
-                    const isClickInside = advancedPanel.contains(e.target) || advancedToggle.contains(e.target);
-                    if (!isClickInside) {
-                        advancedPanel.classList.remove('active');
-                        advancedToggle.closest('.advanced-filters-toggle').classList.remove('active');
+            // Toggle advanced filters
+            const toggleAdvancedFiltersBtn = document.querySelector('.toggle-advanced-filters');
+            const advancedFiltersContainer = document.querySelector('.advanced-filters-container');
+            
+            if (toggleAdvancedFiltersBtn && advancedFiltersContainer) {
+                toggleAdvancedFiltersBtn.addEventListener('click', () => {
+                    const isHidden = advancedFiltersContainer.style.display === 'none';
+                    advancedFiltersContainer.style.display = isHidden ? 'block' : 'none';
+                    
+                    // Update button text
+                    const buttonText = toggleAdvancedFiltersBtn.querySelector('span');
+                    if (buttonText) {
+                        buttonText.textContent = isHidden ? 'Hide Advanced Filters' : 'Advanced Filters';
                     }
-                });
-
-                advancedPanel.addEventListener('click', (e) => {
-                    e.stopPropagation();
                 });
             }
 
             // Setup filter controls
             this.setupFilterControls();
-
-            // Advanced Filters Accordion
-            const accordionHeader = document.querySelector('.accordion-header');
-            const accordionContent = document.querySelector('.accordion-content');
-            const accordionIcon = document.querySelector('.accordion-icon');
-
-            if (accordionHeader && accordionContent && accordionIcon) {
-                accordionHeader.addEventListener('click', () => {
-                    accordionContent.classList.toggle('active');
-                    accordionIcon.classList.toggle('active');
-                });
-            }
 
             // Map container
             const mapContainer = document.querySelector('.property-search-map-container');
@@ -724,8 +1025,6 @@ class SearchByMap {
                     if (e.target === mapContainer) {
                         filterContent?.classList.remove('active');
                         filterToggle?.classList.remove('active');
-                        advancedPanel?.classList.remove('active');
-                        advancedToggle?.closest('.advanced-filters-toggle')?.classList.remove('active');
                     }
                 });
             }
@@ -745,57 +1044,51 @@ class SearchByMap {
                     filterContent.classList.remove('active');
                     filterToggle.classList.remove('active');
                 }
-
-                // Close advanced panel when clicking outside
-                if (advancedPanel && !advancedPanel.contains(e.target) && !advancedToggle.contains(e.target)) {
-                    advancedPanel.classList.remove('active');
-                    advancedToggle.closest('.advanced-filters-toggle').classList.remove('active');
-                }
             });
 
             // Initialize filters from URL parameters
             this.initializeFiltersFromUrl();
 
-            // Advanced Filters Grid
-            const advancedFiltersGrid = document.querySelector('.advanced-filters-grid');
-            if (advancedFiltersGrid) {
-                advancedFiltersGrid.addEventListener('click', (e) => {
-                    const filterItem = e.target.closest('.filter-option');
-                    if (!filterItem) return;
-
-                    e.preventDefault();
-                    e.stopPropagation();
-
-                    // Toggle active state
-                    filterItem.classList.toggle('active');
-
-                    // Get filter type and value
-                    const filterType = filterItem.dataset.filterType;
-                    const filterValue = filterItem.dataset.filterValue;
-
-                    // Update filters object
-                    if (!globalFilters.advanced) {
-                        globalFilters.advanced = {};
+            // Add map movement detection
+            if (this.map) {
+                let mapMoveTimeout;
+                this.map.on('moveend', () => {
+                    if (mapMoveTimeout) {
+                        clearTimeout(mapMoveTimeout);
                     }
 
-                    if (!globalFilters.advanced[filterType]) {
-                        globalFilters.advanced[filterType] = [];
-                    }
+                    mapMoveTimeout = setTimeout(() => {
+                        const bounds = this.map.getBounds();
+                        const center = bounds.getCenter();
+                        
+                        // Find cities in view
+                        const citiesInView = [];
+                        for (const [city, coords] of Object.entries(cityCoordinates)) {
+                            const distance = this.calculateDistance(
+                                center.lat,
+                                center.lng,
+                                coords.lat,
+                                coords.lng
+                            );
 
-                    if (filterItem.classList.contains('active')) {
-                        // Add value if not already present
-                        if (!globalFilters.advanced[filterType].includes(filterValue)) {
-                            globalFilters.advanced[filterType].push(filterValue);
+                            // Use 10km as default radius for city detection
+                            if (distance <= 10) {
+                                citiesInView.push(city);
+                            }
                         }
-                    } else {
-                        // Remove value
-                        globalFilters.advanced[filterType] = globalFilters.advanced[filterType]
-                            .filter(val => val !== filterValue);
-                    }
 
-                    // Update URL and reload properties
-                    this.updateUrlWithFilters();
-                    this.loadProperties(1);
+                        // Update filters if cities are found
+                        if (citiesInView.length > 0) {
+                            // Use the global searchByMap instance
+                            if (window.searchByMap) {
+                                window.searchByMap.updateFilters({
+                                    location: citiesInView.join(',')
+                                });
+                            } else {
+                                console.warn('SearchByMap instance not found during map movement');
+                            }
+                        }
+                    }, 300);
                 });
             }
 
@@ -805,66 +1098,434 @@ class SearchByMap {
     }
 
     setupFilterControls() {
-        // Location filter - ensure single selection
-        const locationFilter = document.querySelector('.location-filter');
-        if (locationFilter) {
-            // Set initial value to Málaga
-            locationFilter.value = 'Málaga';
+        try {
+            debug('Setting up filter controls');
             
-            locationFilter.addEventListener('change', (e) => {
-                // Only allow single location selection
-                globalFilters.location = e.target.value;
-                this.updateUrlWithFilters();
-                this.loadProperties(1);
+            // Setup custom select dropdowns
+            document.querySelectorAll('.custom-select').forEach(select => {
+                const header = select.querySelector('.select-header');
+                const dropdown = select.querySelector('.select-dropdown');
+                
+                if (header && dropdown) {
+                    // Toggle dropdown on header click
+                    header.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        
+                        // Close all other dropdowns
+                        document.querySelectorAll('.custom-select.open').forEach(otherSelect => {
+                            if (otherSelect !== select) {
+                                otherSelect.classList.remove('open');
+                                otherSelect.querySelector('.select-dropdown').style.display = 'none';
+                            }
+                        });
+                        
+                        // Toggle this dropdown
+                        const isOpen = select.classList.toggle('open');
+                        dropdown.style.display = isOpen ? 'block' : 'none';
+                    });
+                    
+                    // Setup search functionality
+                    const searchInput = dropdown.querySelector('.search-box input');
+                    if (searchInput) {
+                        searchInput.addEventListener('input', (e) => {
+                            const searchValue = e.target.value.toLowerCase();
+                            const options = dropdown.querySelectorAll('.checkbox-wrapper-4');
+                            
+                            options.forEach(option => {
+                                const text = option.textContent.toLowerCase();
+                                option.style.display = text.includes(searchValue) ? '' : 'none';
+                            });
+                        });
+                        
+                        // Prevent dropdown from closing when clicking in search input
+                        searchInput.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                        });
+                    }
+                    
+                    // Prevent dropdown from closing when clicking inside dropdown
+                    dropdown.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                    });
+                }
             });
-        }
+            
+            // Close all dropdowns when clicking outside
+            document.addEventListener('click', () => {
+                document.querySelectorAll('.custom-select.open').forEach(select => {
+                    select.classList.remove('open');
+                    const dropdown = select.querySelector('.select-dropdown');
+                    if (dropdown) {
+                        dropdown.style.display = 'none';
+                    }
+                });
+            });
 
-        // Property type filter
-        const propertyTypeFilter = document.querySelector('.property-type-filter');
-        if (propertyTypeFilter) {
-            propertyTypeFilter.addEventListener('change', (e) => {
-                globalFilters.propertyType = e.target.value;
-                this.updateUrlWithFilters();
-                this.loadProperties(1);
-            });
-        }
+            // Location filter - ensure single selection
+            const locationFilter = document.querySelector('.location-filter');
+            if (locationFilter) {
+                // Set initial value to Málaga
+                locationFilter.value = 'Málaga';
+                globalFilters.location = 'Málaga';
+                
+                locationFilter.addEventListener('change', (e) => {
+                    // Only allow single location selection
+                    globalFilters.location = e.target.value;
+                    this.updateUrlWithFilters();
+                    this.loadProperties(1);
+                });
+            }
 
-        // Price range filter
-        const minPriceFilter = document.querySelector('.min-price-filter');
-        const maxPriceFilter = document.querySelector('.max-price-filter');
-        if (minPriceFilter) {
-            minPriceFilter.addEventListener('change', (e) => {
-                globalFilters.minPrice = e.target.value;
-                this.updateUrlWithFilters();
-                this.loadProperties(1);
-            });
-        }
-        if (maxPriceFilter) {
-            maxPriceFilter.addEventListener('change', (e) => {
-                globalFilters.maxPrice = e.target.value;
-                this.updateUrlWithFilters();
-                this.loadProperties(1);
-            });
-        }
+            // Property type filter
+            const propertyTypeFilter = document.querySelector('.property-type-filter');
+            if (propertyTypeFilter) {
+                propertyTypeFilter.addEventListener('change', (e) => {
+                    const value = e.target.value;
+                    globalFilters.propertyType = value === 'any' ? '' : value;
+                    this.updateUrlWithFilters();
+                    this.loadProperties(1);
+                });
+            }
 
-        // Bedrooms filter
-        const bedroomsFilter = document.querySelector('.bedrooms-filter');
-        if (bedroomsFilter) {
-            bedroomsFilter.addEventListener('change', (e) => {
-                globalFilters.bedrooms = e.target.value;
-                this.updateUrlWithFilters();
-                this.loadProperties(1);
-            });
-        }
+            // Price range filter
+            const minPriceFilter = document.querySelector('.min-price-filter');
+            const maxPriceFilter = document.querySelector('.max-price-filter');
+            if (minPriceFilter) {
+                minPriceFilter.addEventListener('change', (e) => {
+                    const value = e.target.value;
+                    globalFilters.minPrice = value === 'any' ? 0 : parseInt(value);
+                    this.updateUrlWithFilters();
+                    this.loadProperties(1);
+                });
+            }
+            if (maxPriceFilter) {
+                maxPriceFilter.addEventListener('change', (e) => {
+                    const value = e.target.value;
+                    globalFilters.maxPrice = value === 'any' ? 0 : parseInt(value);
+                    this.updateUrlWithFilters();
+                    this.loadProperties(1);
+                });
+            }
 
-        // Bathrooms filter
-        const bathroomsFilter = document.querySelector('.bathrooms-filter');
-        if (bathroomsFilter) {
-            bathroomsFilter.addEventListener('change', (e) => {
-                globalFilters.bathrooms = e.target.value;
-                this.updateUrlWithFilters();
-                this.loadProperties(1);
+            // Size range filter - min size
+            const minSizeFilter = document.querySelector('.min-size-filter');
+            if (minSizeFilter) {
+                minSizeFilter.addEventListener('change', (e) => {
+                    const value = e.target.value;
+                    globalFilters.minSize = value === 'any' ? 0 : parseInt(value);
+                    this.updateUrlWithFilters();
+                    this.loadProperties(1);
+                });
+            }
+            
+            // Size range filter - max size
+            const maxSizeFilter = document.querySelector('.max-size-filter');
+            if (maxSizeFilter) {
+                maxSizeFilter.addEventListener('change', (e) => {
+                    const value = e.target.value;
+                    globalFilters.maxSize = value === 'any' ? 0 : parseInt(value);
+                    this.updateUrlWithFilters();
+                    this.loadProperties(1);
+                });
+            }
+
+            // Bedrooms filter
+            const bedroomsFilter = document.querySelector('.bedrooms-filter');
+            if (bedroomsFilter) {
+                bedroomsFilter.addEventListener('change', (e) => {
+                    const value = e.target.value;
+                    globalFilters.bedrooms = value === 'any' ? 0 : parseInt(value);
+                    this.updateUrlWithFilters();
+                    this.loadProperties(1);
+                });
+            }
+
+            // Bathrooms filter
+            const bathroomsFilter = document.querySelector('.bathrooms-filter');
+            if (bathroomsFilter) {
+                bathroomsFilter.addEventListener('change', (e) => {
+                    const value = e.target.value;
+                    globalFilters.bathrooms = value === 'any' ? 0 : parseInt(value);
+                    this.updateUrlWithFilters();
+                    this.loadProperties(1);
+                });
+            }
+
+            // Features filter - handle checkboxes
+            const featuresCheckboxes = document.querySelectorAll('input[name="features"]');
+            if (featuresCheckboxes.length > 0) {
+                featuresCheckboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', (e) => {
+                        const selectedFeatures = Array.from(featuresCheckboxes)
+                            .filter(cb => cb.checked)
+                            .map(cb => cb.value); // Use the value directly as it should be the ParamName
+                        
+                        globalFilters.features = selectedFeatures.join(',');
+                        this.updateUrlWithFilters();
+                        this.loadProperties(1);
+                    });
+                });
+            }
+
+            // Min Built Size filter - handle checkboxes as single selection
+            const minBuiltCheckboxes = document.querySelectorAll('input[name="min-built"]');
+            if (minBuiltCheckboxes.length > 0) {
+                minBuiltCheckboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', (e) => {
+                        // Uncheck all other min-built checkboxes
+                        minBuiltCheckboxes.forEach(cb => {
+                            if (cb !== checkbox) {
+                                cb.checked = false;
+                            }
+                        });
+                        
+                        const value = checkbox.value;
+                        globalFilters.minBuilt = value === 'any' ? 0 : parseInt(value);
+                        
+                        // Update the selected text in the dropdown
+                        const selectHeader = checkbox.closest('.custom-select').querySelector('.selected-text');
+                        if (selectHeader) {
+                            const label = checkbox.nextElementSibling.querySelector('span');
+                            selectHeader.textContent = label ? label.textContent : 'Choose size';
+                        }
+                        
+                        this.updateUrlWithFilters();
+                        this.loadProperties(1);
+                    });
+                });
+            }
+
+            // Max Price filter - handle checkboxes
+            const maxPriceCheckboxes = document.querySelectorAll('input[name="max-price"]');
+            debug('Max price checkboxes found:', maxPriceCheckboxes.length);
+            if (maxPriceCheckboxes.length > 0) {
+                maxPriceCheckboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', (e) => {
+                        debug('Max price checkbox changed:', checkbox.value);
+                        
+                        // Uncheck other max price checkboxes
+                        maxPriceCheckboxes.forEach(cb => {
+                            if (cb !== checkbox) {
+                                cb.checked = false;
+                            }
+                        });
+                        
+                        const value = checkbox.value;
+                        globalFilters.maxPrice = value === 'any' ? 0 : parseInt(value);
+                        debug('Set maxPrice to:', globalFilters.maxPrice);
+                        
+                        // Update the selected text in the dropdown
+                        const selectHeader = checkbox.closest('.custom-select')?.querySelector('.selected-text');
+                        if (selectHeader) {
+                            const label = checkbox.nextElementSibling?.querySelector('span');
+                            selectHeader.textContent = label ? label.textContent : 'Choose max price';
+                        }
+                        
+                        this.updateUrlWithFilters();
+                        this.loadProperties(1);
+                    });
+                });
+            } else {
+                console.warn('No max price checkboxes found with name="max-price"');
+                // Try to find checkboxes with alternative naming
+                const altMaxPriceCheckboxes = document.querySelectorAll('.custom-select[data-filter="max-price"] input[type="checkbox"]');
+                debug('Alternative max price checkboxes found:', altMaxPriceCheckboxes.length);
+                if (altMaxPriceCheckboxes.length > 0) {
+                    altMaxPriceCheckboxes.forEach(checkbox => {
+                        checkbox.addEventListener('change', (e) => {
+                            debug('Alt max price checkbox changed:', checkbox.value);
+                            
+                            // Uncheck other max price checkboxes
+                            altMaxPriceCheckboxes.forEach(cb => {
+                                if (cb !== checkbox) {
+                                    cb.checked = false;
+                                }
+                            });
+                            
+                            const value = checkbox.value;
+                            globalFilters.maxPrice = value === 'any' ? 0 : parseInt(value);
+                            debug('Set maxPrice to:', globalFilters.maxPrice);
+                            
+                            // Update the selected text in the dropdown
+                            const selectHeader = checkbox.closest('.custom-select')?.querySelector('.selected-text');
+                            if (selectHeader) {
+                                const label = checkbox.nextElementSibling?.querySelector('span');
+                                selectHeader.textContent = label ? label.textContent : 'Choose max price';
+                            }
+                            
+                            this.updateUrlWithFilters();
+                            this.loadProperties(1);
+                        });
+                    });
+                }
+            }
+
+            // Quick filters
+            const quickFilterButtons = document.querySelectorAll('.quick-filter-button');
+            quickFilterButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const filterType = button.dataset.filter;
+                    button.classList.toggle('active');
+                    
+                    // Update global filters based on button state
+                    switch (filterType) {
+                        case 'beachfront':
+                            globalFilters.beach = button.classList.contains('active');
+                            break;
+                        case 'golf':
+                            globalFilters.golf = button.classList.contains('active');
+                            break;
+                        case 'luxury':
+                            globalFilters.exclusive = button.classList.contains('active');
+                            break;
+                        case 'new-development':
+                            globalFilters.new = button.classList.contains('active');
+                            break;
+                        case 'sea-view':
+                            globalFilters.seaview = button.classList.contains('active');
+                            break;
+                        case 'investment':
+                            globalFilters.investment = button.classList.contains('active');
+                            break;
+                    }
+                    
+                    // Update URL and reload properties
+                    this.updateUrlWithFilters();
+                    this.loadProperties(1);
+                });
             });
+
+            // Initialize filters from URL
+            this.initializeFiltersFromUrl();
+
+            // Sort filter - handle checkboxes
+            const sortCheckboxes = document.querySelectorAll('input[name="sort"]');
+            if (sortCheckboxes.length > 0) {
+                debug('Found sort checkboxes:', sortCheckboxes.length);
+                sortCheckboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', (e) => {
+                        debug('Sort checkbox changed:', checkbox.value);
+                        
+                        // Uncheck other sort checkboxes
+                        sortCheckboxes.forEach(cb => {
+                            if (cb !== checkbox) {
+                                cb.checked = false;
+                            }
+                        });
+                        
+                        const value = checkbox.value;
+                        
+                        // Update the selected text in the dropdown
+                        const selectHeader = checkbox.closest('.custom-select')?.querySelector('.selected-text');
+                        if (selectHeader) {
+                            const label = checkbox.nextElementSibling?.querySelector('span');
+                            selectHeader.textContent = label ? label.textContent : 'Choose sorting';
+                        }
+                        
+                        // Update global filter and resort
+                        globalFilters.sortOrder = value;
+                        
+                        // Sort properties and update display without fetching from API
+                        this.sortProperties();
+                        
+                        // Just redisplay the properties without making an API call
+                        const container = document.querySelector('.property-list');
+                        if (container) {
+                            const propertiesGrid = container.querySelector('.properties-grid');
+                            if (propertiesGrid) {
+                                // Clear existing property cards
+                                propertiesGrid.innerHTML = '';
+                                
+                                // Create property cards with sorted properties
+                                this.properties.forEach(property => {
+                                    this.createPropertyCard(property, propertiesGrid);
+                                });
+                            }
+                        }
+                        
+                        // Update URL with new sort order
+                        this.updateUrlWithFilters();
+                    });
+                });
+            } else {
+                console.warn('No sort checkboxes found with name="sort"');
+            }
+
+            // Reset filters button
+            const resetButton = document.querySelector('.clear-all-filters');
+            if (resetButton) {
+                resetButton.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    debug('Clearing all filters');
+                    
+                    // Show loader
+                    if (window.showGlobalLoader) {
+                        window.showGlobalLoader();
+                    }
+
+                    // Reset all checkboxes
+                    document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+                        checkbox.checked = false;
+                    });
+
+                    // Reset all select dropdowns text
+                    document.querySelectorAll('.custom-select .selected-text').forEach(text => {
+                        const defaultText = text.closest('.custom-select').dataset.filter;
+                        text.textContent = defaultText ? `Choose ${defaultText}` : 'Choose option';
+                    });
+
+                    // Reset global filters to default values
+                    Object.assign(globalFilters, {
+                        location: 'Málaga',
+                        propertyType: '',
+                        minPrice: 0,
+                        maxPrice: 0,
+                        minSize: 0,
+                        maxSize: 0,
+                        bedrooms: 0,
+                        bathrooms: 0,
+                        beach: false,
+                        golf: false,
+                        exclusive: false,
+                        modern: false,
+                        new: false,
+                        seaview: false,
+                        investment: false,
+                        minBuilt: 0,
+                        features: '',
+                        sortOrder: 'default',
+                        advanced: {}
+                    });
+
+                    // Reset quick filter buttons
+                    document.querySelectorAll('.quick-filter-button').forEach(button => {
+                        button.classList.remove('active');
+                    });
+
+                    // Reset location to Málaga
+                    const locationFilter = document.querySelector('.location-filter');
+                    if (locationFilter) {
+                        locationFilter.value = 'Málaga';
+                    }
+
+                    // Check the Málaga checkbox
+                    const malagaCheckbox = document.querySelector('input[name="location"][value="Málaga"]');
+                    if (malagaCheckbox) {
+                        malagaCheckbox.checked = true;
+                    }
+
+                    // Update URL and reload properties
+                    this.updateUrlWithFilters();
+                    this.loadProperties(1).finally(() => {
+                        // Hide loader when done
+                        if (window.hideGlobalLoader) {
+                            window.hideGlobalLoader();
+                        }
+                    });
+                });
+            }
+        } catch (error) {
+            console.error('Error setting up filter controls:', error);
         }
     }
 
@@ -934,6 +1595,22 @@ class SearchByMap {
             }
         }
 
+        // Size range
+        if (urlParams.has('MinSize')) {
+            const minSizeFilter = document.querySelector('.min-size-filter');
+            if (minSizeFilter) {
+                minSizeFilter.value = urlParams.get('MinSize');
+                globalFilters.minSize = parseInt(urlParams.get('MinSize'));
+            }
+        }
+        if (urlParams.has('MaxSize')) {
+            const maxSizeFilter = document.querySelector('.max-size-filter');
+            if (maxSizeFilter) {
+                maxSizeFilter.value = urlParams.get('MaxSize');
+                globalFilters.maxSize = parseInt(urlParams.get('MaxSize'));
+            }
+        }
+
         // Bedrooms
         if (urlParams.has('Beds')) {
             const bedroomsFilter = document.querySelector('.bedrooms-filter');
@@ -988,7 +1665,25 @@ class SearchByMap {
             return globalFilters[key] && globalFilters[key] !== 'null' && globalFilters[key] !== 0;
         })) {
             if (this.searchByMap) {
-                this.searchByMap.loadProperties(1);
+                // Don't load properties here - it will be loaded by the initialize method
+                // this.searchByMap.loadProperties(1);
+            }
+        }
+
+        // Sort order
+        if (urlParams.has('sort')) {
+            const sortValue = urlParams.get('sort');
+            const sortCheckbox = document.querySelector(`input[name="sort"][value="${sortValue}"]`);
+            if (sortCheckbox) {
+                sortCheckbox.checked = true;
+                globalFilters.sortOrder = sortValue;
+                
+                // Update the selected text in the dropdown
+                const selectHeader = sortCheckbox.closest('.custom-select')?.querySelector('.selected-text');
+                if (selectHeader) {
+                    const label = sortCheckbox.nextElementSibling?.querySelector('span');
+                    selectHeader.textContent = label ? label.textContent : 'Choose sorting';
+                }
             }
         }
     }
@@ -997,219 +1692,145 @@ class SearchByMap {
         this.tooltipContainer.innerHTML = content;
         this.tooltipContainer.appendChild(this.closeButton);
         this.tooltipContainer.style.display = 'block';
-
-        // Position tooltip
-        const point = this.map.latLngToLayerPoint(latlng);
-        const tooltipWidth = this.tooltipContainer.offsetWidth;
-        const tooltipHeight = this.tooltipContainer.offsetHeight;
-        const mapWidth = this.map.getSize().x;
-        const mapHeight = this.map.getSize().y;
-
-        let left = point.x - tooltipWidth / 2;
-        let top = point.y - tooltipHeight - 20;
-
-        // Adjust position if tooltip goes outside map bounds
-        if (left < 0) left = 0;
-        if (left + tooltipWidth > mapWidth) left = mapWidth - tooltipWidth;
-        if (top < 0) top = point.y + 20;
-        if (top + tooltipHeight > mapHeight) top = mapHeight - tooltipHeight;
-
-        this.tooltipContainer.style.left = left + 'px';
-        this.tooltipContainer.style.top = top + 'px';
+        
+        // Position the tooltip
+        const mapContainer = document.getElementById('map');
+        if (!mapContainer) return;
+        
+        // Get map dimensions
+        const mapRect = mapContainer.getBoundingClientRect();
+        
+        // Get pixel coordinates relative to the map
+        const point = this.map.latLngToContainerPoint(latlng);
+        
+        // Position tooltip below the marker with a small offset
+        const tooltipTop = point.y + 10; // 10px below the marker
+        const tooltipLeft = point.x + 10; // 10px to the right of the marker
+        
+        // Adjust if the tooltip would go outside the map
+        this.tooltipContainer.style.top = `${tooltipTop}px`;
+        this.tooltipContainer.style.left = `${tooltipLeft}px`;
     }
 
     updateAdvancedFilters() {
         const selectedFeatures = Array.from(document.querySelectorAll('.advanced-filters input[type="checkbox"]:checked'))
             .map(checkbox => checkbox.value);
-
-        globalFilters.features = selectedFeatures;
+        
+        // Update global filters with selected advanced filters
+        globalFilters.features = selectedFeatures.join(',');
+        this.updateUrlWithFilters();
         this.loadProperties(1);
     }
 
-    initializeAdvancedFilters() {
-        const advancedToggle = document.querySelector('.advanced-filters-toggle');
-        const advancedPanel = document.querySelector('.advanced-filters-panel');
-        const closeButton = document.querySelector('.close-panel');
-
-        if (advancedToggle && advancedPanel) {
-            // Toggle panel visibility
-            advancedToggle.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                advancedPanel.classList.toggle('active');
-                advancedToggle.classList.toggle('active');
-            });
-
-            // Close panel when clicking close button
-            if (closeButton) {
-                closeButton.addEventListener('click', (e) => {
+    initializeQuickFilters() {
+        try {
+            const quickFilters = document.querySelector('.quick-filters-section');
+            if (!quickFilters) {
+                console.warn('Quick filters section not found');
+                return;
+            }
+            
+            const clearAllButton = quickFilters.querySelector('.clear-all-filters');
+            
+            if (clearAllButton) {
+                clearAllButton.addEventListener('click', (e) => {
                     e.preventDefault();
-                    e.stopPropagation();
-                    advancedPanel.classList.remove('active');
-                    advancedToggle.classList.remove('active');
+                    // Reset quick filter buttons
+                    document.querySelectorAll('.quick-filter-button').forEach(button => {
+                        button.classList.remove('active');
+                    });
+                    
+                    // Reset quick filter values in global filters
+                    globalFilters.beach = false;
+                    globalFilters.golf = false;
+                    globalFilters.exclusive = false;
+                    globalFilters.modern = false;
+                    globalFilters.new = false;
+                    globalFilters.seaview = false;
+                    globalFilters.investment = false;
+                    
+                    // Update URL and reload properties
+                    this.updateUrlWithFilters();
+                    this.loadProperties(1);
                 });
             }
-
-            // Close panel when clicking outside
-            document.addEventListener('click', (e) => {
-                const isClickInside = advancedPanel.contains(e.target) || advancedToggle.contains(e.target);
-                if (!isClickInside) {
-                    advancedPanel.classList.remove('active');
-                    advancedToggle.closest('.advanced-filters-toggle').classList.remove('active');
-                }
-            });
-
-            // Handle filter option clicks
-            const filterOptions = advancedPanel.querySelectorAll('.filter-option');
-            filterOptions.forEach(option => {
-                const checkbox = option.querySelector('input[type="checkbox"]');
-                const label = option.querySelector('label');
-
-                if (checkbox && label) {
-                    // Make the entire option clickable
-             
-                    // Handle checkbox changes
-                    checkbox.addEventListener('change', () => {
-                        // Update UI
-                        option.classList.toggle('active', checkbox.checked);
-                        label.classList.toggle('active', checkbox.checked);
-
-                        // Get filter key from label's 'for' attribute
-                        const filterKey = label.getAttribute('for');
-                        if (!filterKey) return;
-
-                        // Update filters object
-                        if (!globalFilters.advanced) {
-                            globalFilters.advanced = {};
-                        }
-
-                        // Set the filter value based on checkbox state
-                        globalFilters.advanced[filterKey] = checkbox.checked;
-
-                        // Update URL and reload properties
-                        this.updateUrlWithFilters();
-                        this.loadProperties(1);
-                    });
-                }
-            });
-        }
-    }
-
-    initializeQuickFilters() {
-        const quickFilters = document.querySelector('.quick-filters');
-        const clearAllButton = quickFilters.querySelector('.clear-all-filters');
-
-        // Clear all filters functionality
-        if (clearAllButton) {
-            clearAllButton.addEventListener('click', () => {
-                // Remove active class from all quick filter buttons
-                const quickFilterButtons = quickFilters.querySelectorAll('.quick-filter-button');
-                quickFilterButtons.forEach(button => {
-                    button.classList.remove('active');
-                });
-
-                // Reset all quick filter values
-                globalFilters.beach = false;
-                globalFilters.golf = false;
-                globalFilters.exclusive = false;
-                globalFilters.modern = false;
-                globalFilters.new = false;
-
-                // Reset advanced filters
-                this.resetAdvancedFilters();
-
-                // Update URL and reload properties
-                this.updateUrlWithFilters();
-                this.loadProperties(1);
-            });
-        }
-
-        // Quick filter buttons functionality
-        const quickFilterButtons = quickFilters.querySelectorAll('.quick-filter-button');
-        quickFilterButtons.forEach(button => {
-            button.addEventListener('click', (e) => {
-                e.preventDefault();
-                const filterType = button.getAttribute('data-filter-type');
-
-                // Toggle active state
-                button.classList.toggle('active');
-
-                // Update filters based on the quick filter type
+            
+            // Set initial state of quick filter buttons from URL params
+            const urlParams = new URLSearchParams(window.location.search);
+            document.querySelectorAll('.quick-filter-button').forEach(button => {
+                const filterType = button.dataset.filter;
+                let isActive = false;
+                
                 switch (filterType) {
-                    case 'beach':
-                        globalFilters.beach = button.classList.contains('active');
+                    case 'beachfront':
+                        isActive = urlParams.has('beach') || globalFilters.beach;
+                        globalFilters.beach = isActive;
                         break;
                     case 'golf':
-                        globalFilters.golf = button.classList.contains('active');
+                        isActive = urlParams.has('golf') || globalFilters.golf;
+                        globalFilters.golf = isActive;
                         break;
-                    case 'exclusive':
-                        globalFilters.exclusive = button.classList.contains('active');
+                    case 'luxury':
+                        isActive = urlParams.has('exclusive') || globalFilters.exclusive;
+                        globalFilters.exclusive = isActive;
                         break;
-                    case 'modern':
-                        globalFilters.modern = button.classList.contains('active');
+                    case 'new-development':
+                        isActive = urlParams.has('new') || globalFilters.new;
+                        globalFilters.new = isActive;
                         break;
-                    case 'new':
-                        globalFilters.new = button.classList.contains('active');
+                    case 'sea-view':
+                        isActive = urlParams.has('seaview') || globalFilters.seaview;
+                        globalFilters.seaview = isActive;
+                        break;
+                    case 'investment':
+                        isActive = urlParams.has('investment') || globalFilters.investment;
+                        globalFilters.investment = isActive;
                         break;
                 }
-
-                // Update URL and reload properties
-                this.updateUrlWithFilters();
-                this.loadProperties(1);
+                
+                if (isActive) {
+                    button.classList.add('active');
+                }
             });
-        });
-    }
-
-    resetAdvancedFilters() {
-        // Reset all checkboxes
-        const checkboxes = document.querySelectorAll('.filter-option input[type="checkbox"]');
-        checkboxes.forEach(checkbox => {
-            checkbox.checked = false;
-            const option = checkbox.closest('.filter-option');
-            if (option) {
-                option.classList.remove('active');
-            }
-        });
-
-        // Reset filter values
-        globalFilters.location = 'Málaga';
-        globalFilters.propertyType = '';
-        globalFilters.minPrice = 0;
-        globalFilters.bedrooms = 0;
-        globalFilters.bathrooms = 0;
+        } catch (error) {
+            console.warn('Error initializing quick filters:', error);
+            // Graceful degradation - don't let this stop the whole map from working
+        }
     }
 
     formatPrice(price) {
         if (!price) return 'Price on request';
 
         // Convert to number if it's a string
-        const numericPrice = typeof price === 'string' ? parseFloat(price.replace(/[^0-9.-]+/g, '')) : price;
-
-        // Format the price with thousands separator and currency symbol
-        return new Intl.NumberFormat('en-US', {
+        const numPrice = typeof price === 'string' ? parseInt(price.replace(/[^\d]/g, '')) : price;
+        
+        // Format the price with thousand separators
+        return numPrice.toLocaleString('es-ES', {
             style: 'currency',
             currency: 'EUR',
-            maximumFractionDigits: 0,
-            minimumFractionDigits: 0
-        }).format(numericPrice);
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+        });
     }
 
     createPropertyPopup(property) {
         return `
             <div class="property-popup">
                 <div class="property-popup-image">
-                    <img src="${property.image}" alt="${this.formatPrice(property.price)}" 
-                         onerror="this.onerror=null; this.src='/wp-content/themes/solvistaproperty/assets/images/placeholder.svg';">
+                    <img src="${property.image || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJYAAABkCAYAAABkW8nwAAADT0lEQVR4Xu3YQU7CQBSG0XGp7H8DrpCNa5eq/02wsjQx4QpC9c17OQmJ0unfb+bo9PV6vV78IUAYFIG1YNWozHvDClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClYFwePx+Lher7/fx+PxOJ/Ph+l0Os1F3O/3r7Omy+UyXK/X6/CZsra/XWvZeF6/rP94/qM1/e/7/Ot+wSrgTZhms9nw4+1q7bgnCxez2exrzcVi8XXdcv0E5AlitVp9rpv3W87Pt46X+zn2/MVehnVk0O/WPs5tdGtbXnc4HIbj8TgcDofher3efq3b+Xa7/XrNL2HL9e12O6xWq2GxWAy73W5YLpfDdrud9z3fb7fbzTDn80fn73a7+eVlYO33+3lfz3uez/lfr9f5pbfdbo9sfHjNYR1G9O0Fx+PxDGGCNCFYLpc3GOv1+lwul8NmsxlWq9Xw1xdYp9NpnguWPM+r2+12eP5Tul6v77jSrfn4sF68ElgvBjVfbkKRbnM8Hm8T0m1Sw1mv13fPV/bFVXq+cnVzeZ5X18O+5ytX+m5+7/zFtubLX3uB9SJiy7DNbdKJpvssp/V6vTxDmVCdz+fheUwp44Qzoys/oa7n13KiOU8jXZ2S5/yEK/ub+8n+Jp7Zmwxr7Xcez7vdb8B6AdCEJZPp9Xo9j++5+ix3mzRXnqTZZwYp3S3jl0FJjrtdLWOYIc1+Jqoz7HStPM+wbTabO9Tp9DLeSfdaXveEMVP6dNF0w+xnhnb+Z4vbvvK5+f/5y7hXwfqJVH6Xplvk9yn5QZlhffcFMzaV0clnc9c8Y5ZBzYhm/DK26ULpZrnOrGy9Xs/rmzV1a8v6dL90yQxtnmeks9cM6YxpdrfcXf6tOhPzHGn282x/P3HmtWsAlnEUKMACq0igMNqOBaygBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURof9AXTSRXwu84FQAAAAAElFTkSuQmCC'}" alt="${property.title}">
                 </div>
                 <div class="property-popup-content">
-                    <h3>${this.formatPrice(property.price)}</h3>
-                    <p class="property-popup-location"><i class="fas fa-map-marker-alt"></i> ${property.location}</p>
-                    <div class="property-popup-features">
-                        <span><i class="fas fa-bed"></i> ${property.bedrooms} beds</span>
-                        <span><i class="fas fa-bath"></i> ${property.bathrooms} baths</span>
-                        <span><i class="fas fa-ruler-combined"></i> ${property.area}</span>
+                    <div class="price">${this.formatPrice(property.price)}</div>
+                    <div class="location"><i class="fas fa-map-marker-alt"></i> ${property.location}</div>
+                    <div class="features">
+                        <span>${property.beds || ''} </span> <span>Bedrooms</span>
+                        <span> ${property.baths || ''} </span><span>Bathrooms</span>
+                        <span> ${property.propertySize || ''} </span><span>sq ft</span>
+                        <span> ${property.propertySize || ''} </span><span>refid</span>
                     </div>
-                    <a href="${property.viewDetails}" class="property-popup-button">View Details</a>
+                    <div class="popup-actions">
+                        <a href="${property.url}" class="view-details-btn" target="_blank">View Details</a>
+                    </div>
                 </div>
             </div>
         `;
@@ -1219,57 +1840,65 @@ class SearchByMap {
         const card = document.createElement('div');
         card.className = 'property-card';
         card.dataset.propertyId = property.id;
+        
+        const imageUrl = property.image || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJYAAABkCAYAAABkW8nwAAADT0lEQVR4Xu3YQU7CQBSG0XGp7H8DrpCNa5eq/02wsjQx4QpC9c17OQmJ0unfb+bo9PV6vV78IUAYFIG1YNWozHvDClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClYFwePx+Lher7/fx+PxOJ/Ph+l0Os1F3O/3r7Omy+UyXK/X6/CZsra/XWvZeF6/rP94/qM1/e/7/Ot+wSrgTZhms9nw4+1q7bgnCxez2exrzcVi8XXdcv0E5AlitVp9rpv3W87Pt46X+zn2/MVehnVk0O/WPs5tdGtbXnc4HIbj8TgcDofher3efq3b+Xa7/XrNL2HL9e12O6xWq2GxWAy73W5YLpfDdrud9z3fb7fbzTDn80fn73a7+eVlYO33+3lfz3uez/lfr9f5pbfdbo9sfHjNYR1G9O0Fx+PxDGGCNCFYLpc3GOv1+lwul8NmsxlWq9Xw1xdYp9NpnguWPM+r2+12eP5Tul6v77jSrfn4sF68ElgvBjVfbkKRbnM8Hm8T0m1Sw1mv13fPV/bFVXq+cnVzeZ5X18O+5ytX+m5+7/zFtubLX3uB9SJiy7DNbdKJpvssp/V6vTxDmVCdz+fheUwp44Qzoys/oa7n13KiOU8jXZ2S5/yEK/ub+8n+Jp7Zmwxr7Xcez7vdb8B6AdCEJZPp9Xo9j++5+ix3mzRXnqTZZwYp3S3jl0FJjrtdLWOYIc1+Jqoz7HStPM+wbTabO9Tp9DLeSfdaXveEMVP6dNF0w+xnhnb+Z4vbvvK5+f/5y7hXwfqJVH6Xplvk9yn5QZlhffcFMzaV0clnc9c8Y5ZBzYhm/DK26ULpZrnOrGy9Xs/rmzV1a8v6dL90yQxtnmeks9cM6YxpdrfcXf6tOhPzHGn282x/P3HmtWsAlnEUKMACq0igMNqOBaygBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURof9AXTSRXwu84FQAAAAAElFTkSuQmCC';
+    
+    // Ensure property URL is properly constructed
+    const propertyUrl = property.url || `/property/${property.reference}`;
+    
+    card.innerHTML = `
+        <div class="property-image">
+            <img src="${imageUrl}" alt="${property.title}">
+        </div>
+        <div class="property-details">
+            <div class="property-title">${property.location}</div>
+            <div class="property-subtitle">${property.area || ''}</div>
 
-        card.innerHTML = `
-            <div class="property-image">
-                <img src="${property.image}" alt="${this.formatPrice(property.price)}"
-                     onerror="this.onerror=null; this.src='/wp-content/themes/oceanwp/assets/images/placeholder.jpg';">
+            <div class="property-price">${this.formatPrice(property.price)}</div>
+            <div class="property-location">
+                <i class="fas fa-map-marker-alt"></i> ${property.location}
             </div>
-            <div class="property-details">
-                <h3 class="property-title">${this.formatPrice(property.price)}</h3>
-                <div class="property-features">
-                    <span class="property-feature">
-                        <i class="fas fa-bed"></i>
-                        <span class="feature-value">${property.bedrooms} beds</span>
-                    </span>
-                    <span class="property-feature">
-                        <i class="fas fa-bath"></i>
-                        <span class="feature-value">${property.bathrooms} baths</span>
-                    </span>
-                    <span class="property-feature">
-                        <i class="fas fa-ruler-combined"></i>
-                        <span class="feature-value">${property.area}</span>
-                    </span>
-                </div>
-                <div class="property-location">
-                    <i class="fas fa-map-marker-alt"></i>
-                    <span class="location-text">${property.location}</span>
-                </div>
-                <a href="${property.viewDetails}" class="property-link">View Details</a>
+             <div class="property-features">
+            <div class="property-feature"> 
+               <span>${property.beds || ''} </span> <span>Bedrooms</span>
             </div>
-        `;
 
-        // Add click handler to the card
+            <div class="property-feature"> 
+               <span> ${property.baths || ''} </span><span>Bathrooms</span>
+            </div>
+
+            <div class="property-feature"> 
+                        <span> ${property.propertySize || ''} </span><span>sq ft</span>
+            </div>
+
+            <div class="property-feature"> 
+                        <span> ${property.propertySize || ''} </span><span>refid</span>
+            </div>
+            </div>
+            <a href="${propertyUrl}" class="property-link" target="_blank">View Details</a>
+        </div>
+    `;
+        
+        // Add click handler to highlight on map
         card.addEventListener('click', (e) => {
-            // Don't trigger if clicking the "View Details" link
-            if (e.target.closest('.property-link')) {
+            // Don't trigger if clicking on the "View Details" link
+            if (e.target.classList.contains('property-link') || 
+                e.target.parentElement.classList.contains('property-link')) {
                 return;
             }
-
-            // Validate coordinates before showing on map
-            const lat = parseFloat(property.latitude);
-            const lng = parseFloat(property.longitude);
-
-            if (isNaN(lat) || isNaN(lng) ||
-                lat < -90 || lat > 90 ||
-                lng < -180 || lng > 180) {
-                console.error('Invalid coordinates for property:', property.id, lat, lng);
-                return;
-            }
-
+            
+            e.preventDefault();
+            
+            // Remove active class from all cards
+            document.querySelectorAll('.property-card').forEach(c => c.classList.remove('active'));
+            
+            // Add active class to this card
+            card.classList.add('active');
+            
+            // Show property on map
             this.showPropertyOnMap(property);
         });
-
+        
         container.appendChild(card);
         return card;
     }
@@ -1279,69 +1908,39 @@ class SearchByMap {
             // Validate coordinates before proceeding
             const lat = parseFloat(property.latitude);
             const lng = parseFloat(property.longitude);
-
-
-            if (isNaN(lat) || isNaN(lng) ||
-                lat < -90 || lat > 90 ||
-                lng < -180 || lng > 180) {
-                console.error('Invalid coordinates for property:', property.id, lat, lng);
+            
+            if (isNaN(lat) || isNaN(lng)) {
+                console.error('Invalid coordinates for property:', property);
                 return;
             }
-
-            // Remove active class from all cards
-            document.querySelectorAll('.property-card').forEach(c => c.classList.remove('active'));
-
-            // Add active class to clicked card
-            const card = document.querySelector(`.property-card[data-property-id="${property.id}"]`);
-            if (card) {
-                card.classList.add('active');
-                // Scroll card into view
-                card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-
-            // Find the corresponding marker
-            const marker = this.markers.find(m => m.propertyId === property.id);
-            if (marker) {
-                try {
-                    // Ensure the map is initialized
-                    if (!this.map) {
-                        console.error('Map not initialized');
-                        return;
-                    }
-
-                    // Create a new LatLng object with validated coordinates
-                    const latLng = L.latLng(lat, lng);
-
-                    // First pan to the location
-                    this.map.panTo(latLng);
-
-                    // Then zoom in with animation
-                    this.map.setView(latLng, 17, { // Increased zoom level
-                        animate: true,
-                        duration: 1.5
-                    });
-
-                    // Open popup after a short delay to ensure smooth animation
-                    setTimeout(() => {
-                        if (marker && marker.openPopup) {
-                            marker.openPopup();
+            
+            // Create LatLng object
+            const propertyLatLng = L.latLng(lat, lng);
+            
+            // Pan map to property location
+            this.map.setView(propertyLatLng, 16);
+            
+            // Find marker for this property and open popup
+            for (const marker of this.markers) {
+                if (marker.options.propertyId === property.id) {
+                    // Open popup for this marker
+                    marker.openPopup();
+                    
+                    // Highlight marker
+                    this.markers.forEach(m => {
+                        const markerElement = m.getElement();
+                        if (markerElement) {
+                            markerElement.classList.remove('active');
                         }
-                    }, 1000);
-
-                    // Highlight the marker
-                    if (marker.setIcon) {
-                        marker.setIcon(L.divIcon({
-                            className: 'custom-marker active',
-                            html: `<div class="price-marker">${this.formatPrice(property.price)}</div>`,
-                            iconSize: [120, 30],
-                            iconAnchor: [60, 15]
-                        }));
+                    });
+                    
+                    const markerElement = marker.getElement();
+                    if (markerElement) {
+                        markerElement.classList.add('active');
                     }
-                } catch (error) {
-                    console.error('Error flying to marker:', error);
+                    
+                    break;
                 }
-            } else {
-                console.warn('Marker not found for property:', property.id);
             }
         } catch (error) {
             console.error('Error showing property on map:', error);
@@ -1354,46 +1953,35 @@ class SearchByMap {
             console.log(`Select element not found for filter type: ${filterType}`);
             return;
         }
-
-        const header = select.querySelector('.select-header');
-        const checkboxes = select.querySelectorAll(`input[name="${filterType}"]:checked`);
-
-        if (!header) {
-            console.log(`Header element not found for filter type: ${filterType}`);
+        
+        const selectedTextElement = select.querySelector('.selected-text');
+        if (!selectedTextElement) {
+            console.log(`Selected text element not found for filter type: ${filterType}`);
             return;
         }
-
-        console.log(`Updating selected text for ${filterType}. Checked checkboxes:`, Array.from(checkboxes).map(cb => cb.value));
-
-        if (checkboxes.length === 0) {
-            header.textContent = `All ${filterType.replace('_', ' ')}`;
+        
+        // Get all checked checkboxes for this filter
+        const checkedCheckboxes = Array.from(select.querySelectorAll(`input[name="${filterType}"]:checked`));
+        
+        if (checkedCheckboxes.length === 0) {
+            // No checkboxes checked, show default text
+            selectedTextElement.textContent = `Choose ${filterType}`;
             return;
         }
-
-        const selectedValues = Array.from(checkboxes)
-            .filter(checkbox => !checkbox.id.includes('-all'))
-            .map(checkbox => checkbox.value);
-
-        console.log(`Selected values for ${filterType}:`, selectedValues);
-
-        if (selectedValues.length === 0) {
-            header.textContent = `All ${filterType.replace('_', ' ')}`;
-        } else if (selectedValues.length === 1) {
-            header.textContent = selectedValues[0];
+        
+        if (checkedCheckboxes.length === 1 && checkedCheckboxes[0].id === `${filterType}-all`) {
+            // "All" option is checked
+            selectedTextElement.textContent = `All ${filterType.charAt(0).toUpperCase() + filterType.slice(1)}`;
+            return;
+        }
+        
+        // Multiple options selected or specific option(s)
+        if (checkedCheckboxes.length === 1) {
+            // Single option
+            selectedTextElement.textContent = checkedCheckboxes[0].nextElementSibling.textContent.trim();
         } else {
-            header.textContent = `${selectedValues.length} selected`;
-        }
-
-        // For location filter, ensure Málaga is selected if no other location is selected
-        if (filterType === 'location' && selectedValues.length === 0) {
-            const malagaCheckbox = select.querySelector('input[value="Málaga"]');
-            if (malagaCheckbox) {
-                console.log('No location selected, checking Málaga checkbox');
-                malagaCheckbox.checked = true;
-                header.textContent = 'Málaga';
-            } else {
-                console.log('Málaga checkbox not found');
-            }
+            // Multiple options
+            selectedTextElement.textContent = `${checkedCheckboxes.length} ${filterType} selected`;
         }
     }
 
@@ -1403,56 +1991,70 @@ class SearchByMap {
             const locationCheckbox = document.querySelector(`input[name="location"][value="${filters.location}"]`);
             if (locationCheckbox) {
                 locationCheckbox.checked = true;
+                
+                // Uncheck the "All" checkbox and other location checkboxes
+                const allLocationCheckbox = document.getElementById('location-all');
+                if (allLocationCheckbox) {
+                    allLocationCheckbox.checked = false;
+                }
+                
+                document.querySelectorAll('input[name="location"]').forEach(cb => {
+                    if (cb !== locationCheckbox && cb.id !== 'location-all') {
+                        cb.checked = false;
+                    }
+                });
+                
                 this.updateSelectedText('location');
             }
         }
-
+        
         // Update property type checkboxes
         if (filters.propertyType) {
-            const propertyTypeMap = {
-                '2-3': 'apartment',
-                '2-4': 'villa',
-                '2-5': 'townhouse',
-                '2-6': 'penthouse',
-                '2-7': 'plot',
-                '2-8': 'commercial'
-            };
-            const checkboxValue = propertyTypeMap[filters.propertyType];
-            if (checkboxValue) {
-                const propertyTypeCheckbox = document.querySelector(`input[name="property_type"][value="${checkboxValue}"]`);
-                if (propertyTypeCheckbox) {
-                    propertyTypeCheckbox.checked = true;
-                    this.updateSelectedText('property_type');
+            // Clear existing property type selections
+            document.querySelectorAll('input[name="property_type"]').forEach(cb => {
+                cb.checked = false;
+            });
+            
+            // Handle array or string
+            const propertyTypes = Array.isArray(filters.propertyType) ? 
+                filters.propertyType : [filters.propertyType];
+            
+            // Check corresponding checkboxes
+            propertyTypes.forEach(type => {
+                const checkbox = document.querySelector(`input[name="property_type"][value="${type}"]`);
+                if (checkbox) {
+                    checkbox.checked = true;
                 }
-            }
+            });
+            
+            this.updateSelectedText('property_type');
         }
-
-        // Update price checkboxes
-        if (filters.minPrice !== undefined && filters.maxPrice !== undefined) {
-            const priceCheckbox = document.querySelector(`input[name="price"][value="${filters.minPrice}-${filters.maxPrice}"]`);
-            if (priceCheckbox) {
-                priceCheckbox.checked = true;
-                this.updateSelectedText('price');
+        
+        // Update quick filter buttons
+        document.querySelectorAll('.quick-filter-button').forEach(button => {
+            const filterType = button.dataset.filter;
+            
+            switch (filterType) {
+                case 'beachfront':
+                    button.classList.toggle('active', !!filters.beach);
+                    break;
+                case 'golf':
+                    button.classList.toggle('active', !!filters.golf);
+                    break;
+                case 'luxury':
+                    button.classList.toggle('active', !!filters.exclusive);
+                    break;
+                case 'new-development':
+                    button.classList.toggle('active', !!filters.new);
+                    break;
+                case 'sea-view':
+                    button.classList.toggle('active', !!filters.seaview);
+                    break;
+                case 'investment':
+                    button.classList.toggle('active', !!filters.investment);
+                    break;
             }
-        }
-
-        // Update bedrooms checkboxes
-        if (filters.bedrooms) {
-            const bedroomsCheckbox = document.querySelector(`input[name="bedrooms"][value="${filters.bedrooms}"]`);
-            if (bedroomsCheckbox) {
-                bedroomsCheckbox.checked = true;
-                this.updateSelectedText('bedrooms');
-            }
-        }
-
-        // Update bathrooms checkboxes
-        if (filters.bathrooms) {
-            const bathroomsCheckbox = document.querySelector(`input[name="bathrooms"][value="${filters.bathrooms}"]`);
-            if (bathroomsCheckbox) {
-                bathroomsCheckbox.checked = true;
-                this.updateSelectedText('bathrooms');
-            }
-        }
+        });
     }
 
     resetAllFilters() {
@@ -1461,6 +2063,8 @@ class SearchByMap {
         globalFilters.propertyType = '';
         globalFilters.minPrice = 0;
         globalFilters.maxPrice = 0;
+        globalFilters.minSize = 0;
+        globalFilters.maxSize = 0;
         globalFilters.bedrooms = 0;
         globalFilters.bathrooms = 0;
         globalFilters.beach = false;
@@ -1468,62 +2072,41 @@ class SearchByMap {
         globalFilters.exclusive = false;
         globalFilters.modern = false;
         globalFilters.new = false;
+        globalFilters.seaview = false;
+        globalFilters.investment = false;
+        globalFilters.minBuilt = 0;
+        globalFilters.features = '';
+        globalFilters.sortOrder = 'default';
         globalFilters.advanced = {};
-
-        // Reset all checkboxes
-        document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
-            checkbox.checked = false;
-        });
-
-        // Reset all select elements
-        document.querySelectorAll('select').forEach(select => {
-            select.value = '';
-        });
-
+        
+        // Reset UI
+        this.updateCheckboxesFromFilters(globalFilters);
+        
         // Reset location to Málaga
         const locationFilter = document.querySelector('.location-filter');
         if (locationFilter) {
             locationFilter.value = 'Málaga';
         }
-
-        // Reset price inputs
-        const minPriceFilter = document.querySelector('.min-price-filter');
-        const maxPriceFilter = document.querySelector('.max-price-filter');
-        if (minPriceFilter) minPriceFilter.value = '';
-        if (maxPriceFilter) maxPriceFilter.value = '';
-
+        
+        // Check the Málaga checkbox
+        const malagaCheckbox = document.querySelector('input[name="location"][value="Málaga"]');
+        if (malagaCheckbox) {
+            malagaCheckbox.checked = true;
+        }
+        
         // Update URL and reload properties
         this.updateUrlWithFilters();
-        this.loadProperties(1);
-
-        // Update selected text for all filters
-        this.updateSelectedText('location');
-        this.updateSelectedText('property_type');
-        this.updateSelectedText('price');
-        this.updateSelectedText('bedrooms');
-        this.updateSelectedText('bathrooms');
-
-        // Close all dropdowns
-        document.querySelectorAll('.select-dropdown').forEach(dropdown => {
-            dropdown.classList.remove('active');
-        });
-        document.querySelectorAll('.filter-content').forEach(content => {
-            content.classList.remove('active');
-        });
-        document.querySelectorAll('.advanced-filters-panel').forEach(panel => {
-            panel.classList.remove('active');
-        });
+        // Use debounced version to prevent double loading
+        this.debouncedLoadProperties(1);
     }
 
     debouncedCheckVisibleCities() {
         if (this.isMapUpdating) return;
-
+        
         // Clear any existing timer
-        if (this.debounceTimer) {
-            clearTimeout(this.debounceTimer);
-        }
-
-        // Set new timer
+        clearTimeout(this.debounceTimer);
+        
+        // Set a new timer
         this.debounceTimer = setTimeout(() => {
             this.checkVisibleCities();
         }, this.debounceDelay);
@@ -1531,97 +2114,140 @@ class SearchByMap {
 
     checkVisibleCities() {
         if (!this.map || this.isMapUpdating) return;
-
+        
         const bounds = this.map.getBounds();
-        const newVisibleCities = new Set();
-
-        // Check each city's coordinates against the current map bounds
-        Object.entries(cityCoordinates).forEach(([city, coords]) => {
-            const latLng = L.latLng(coords.lat, coords.lng);
-            if (bounds.contains(latLng)) {
-                newVisibleCities.add(city);
+        this.visibleCities.clear();
+        
+        // Check which cities are visible in the current map bounds
+        for (const [cityName, coords] of Object.entries(cityCoordinates)) {
+            const cityLatLng = L.latLng(coords.lat, coords.lng);
+            if (bounds.contains(cityLatLng)) {
+                this.visibleCities.add(cityName);
             }
-        });
-
-        // If visible cities have changed, update filters
-        if (this.visibleCities.size !== newVisibleCities.size || 
-            ![...this.visibleCities].every(city => newVisibleCities.has(city))) {
-            
-            this.visibleCities = newVisibleCities;
-            this.updateFiltersFromVisibleCities();
         }
+        
+        // Update current bounds
+        this.currentBounds = bounds;
+        
+        // Update filters based on visible cities
+        this.updateFiltersFromVisibleCities();
     }
 
     updateFiltersFromVisibleCities() {
         if (this.visibleCities.size === 0 || this.isMapUpdating) return;
-
+        
         // Set updating state
         this.isMapUpdating = true;
         
-        // Show global loader
-        const globalLoader = document.querySelector('.global-loader');
-        if (globalLoader) {
-            globalLoader.style.display = 'flex';
-            const loaderText = globalLoader.querySelector('.global-loader-text');
-            const loaderSubtext = globalLoader.querySelector('.global-loader-subtext');
-            if (loaderText) loaderText.textContent = 'Updating Map';
-            if (loaderSubtext) loaderSubtext.textContent = 'Please wait while we update the visible properties...';
-        }
-
-        // Convert Set to Array for the filter
-        const visibleCitiesArray = Array.from(this.visibleCities);
-        
-        // Update global filters
-        globalFilters.location = visibleCitiesArray;
-        
-        // Update checkboxes
-        document.querySelectorAll('input[name="location"]').forEach(checkbox => {
-            checkbox.checked = visibleCitiesArray.includes(checkbox.value);
-        });
-
-        // Update URL and reload properties
-        this.updateUrlWithFilters();
-        
-        // Load properties and hide loading indicator when done
-        this.loadProperties(1).finally(() => {
-            this.isMapUpdating = false;
-            if (globalLoader) {
-                globalLoader.style.display = 'none';
+        // If only one city is visible, update the location filter
+        if (this.visibleCities.size === 1) {
+            const visibleCity = Array.from(this.visibleCities)[0];
+            
+            // Only update if the location filter doesn't already match
+            if (globalFilters.location !== visibleCity) {
+                // Update the location filter
+                globalFilters.location = visibleCity;
+                
+                // Update the UI
+                const locationFilter = document.querySelector('.location-filter');
+                if (locationFilter) {
+                    locationFilter.value = visibleCity;
+                }
+                
+                // Update checkboxes
+                document.querySelectorAll('input[name="location"]').forEach(cb => {
+                    cb.checked = cb.value === visibleCity;
+                });
+                
+                // Update URL parameters (without reloading properties)
+                this.updateUrlWithFilters();
             }
-        });
+        }
         
-        // Update selected text
+        // Reset updating state after a short delay
+        setTimeout(() => {
+            this.isMapUpdating = false;
+        }, 200);
+        
         this.updateSelectedText('location');
     }
-}
 
-// Initialize the map when the DOM is loaded
-document.addEventListener('DOMContentLoaded', async () => {
-    // Add error container if it doesn't exist
-    if (!document.getElementById('map-error')) {
-        const errorContainer = document.createElement('div');
-        errorContainer.id = 'map-error';
-        errorContainer.style.display = 'none';
-        errorContainer.style.padding = '20px';
-        errorContainer.style.margin = '20px';
-        errorContainer.style.border = '1px solid #ff0000';
-        errorContainer.style.color = '#ff0000';
-        const mapContainer = document.getElementById('map');
-        if (mapContainer) {
-            mapContainer.parentNode.insertBefore(errorContainer, mapContainer);
+    // Helper function to calculate distance between two points in km
+    calculateDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371; // Earth's radius in km
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        return R * c;
+    }
+
+    // Initialize max price filter
+    initializeMaxPriceFilter() {
+        try {
+            debug('Initializing max price filter');
+            const maxPriceCheckboxes = document.querySelectorAll('input[name="max-price"]');
+            debug('Found max price checkboxes:', maxPriceCheckboxes.length);
+            
+            // Set up event handlers
+            maxPriceCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', (e) => {
+                    const value = checkbox.value;
+                    debug('Max price changed to:', value);
+                    
+                    // Uncheck other checkboxes
+                    maxPriceCheckboxes.forEach(cb => {
+                        if (cb !== checkbox) {
+                            cb.checked = false;
+                        }
+                    });
+                    
+                    // Update the filter
+                    globalFilters.maxPrice = value === 'any' ? 0 : parseInt(value);
+                    
+                    // Update the selected text in the dropdown
+                    const selectHeader = checkbox.closest('.custom-select')?.querySelector('.selected-text');
+                    if (selectHeader) {
+                        const label = checkbox.nextElementSibling?.querySelector('span');
+                        selectHeader.textContent = label ? label.textContent : 'Choose max price';
+                    }
+                    
+                    // Update URL and load properties (use updateFilters to prevent double loading)
+                    this.updateFilters({ maxPrice: globalFilters.maxPrice });
+                });
+            });
+            
+            // Load initial value from URL
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('PMax')) {
+                const maxPrice = urlParams.get('PMax');
+                debug('Setting initial max price from URL:', maxPrice);
+                
+                // Find and check the matching checkbox
+                const matchingCheckbox = Array.from(maxPriceCheckboxes).find(cb => 
+                    cb.value === maxPrice || (cb.value === 'any' && maxPrice === '0')
+                );
+                
+                if (matchingCheckbox) {
+                    matchingCheckbox.checked = true;
+                    // Update the dropdown text
+                    const selectHeader = matchingCheckbox.closest('.custom-select')?.querySelector('.selected-text');
+                    if (selectHeader) {
+                        const label = matchingCheckbox.nextElementSibling?.querySelector('span');
+                        selectHeader.textContent = label ? label.textContent : 'Choose max price';
+                    }
+                    
+                    // Update the filter without triggering a load (will be done after initialization)
+                    globalFilters.maxPrice = maxPrice === '0' ? 0 : parseInt(maxPrice);
+                }
+            }
+        } catch (error) {
+            console.error('Error initializing max price filter:', error);
         }
     }
-
-    // Initialize only if not already initialized
-    if (!window.searchByMap) {
-        window.searchByMap = new SearchByMap();
-        // Initialize SearchByMap first
-        await window.searchByMap.initialize();
-        // Then initialize PropertyFilters
-        const propertyFilters = new PropertyFilters();
-        propertyFilters.init();
-    }
-});
+}
 
 // PropertyFilters Class
 class PropertyFilters {
@@ -1664,7 +2290,9 @@ class PropertyFilters {
 
     updateFilters(newFilters) {
         // Show loading indicator
-        this.showLoadingIndicator();
+        if (window.showGlobalLoader) {
+            window.showGlobalLoader();
+        }
 
         // Only update filters that are provided in newFilters
         Object.keys(newFilters).forEach(key => {
@@ -1676,13 +2304,29 @@ class PropertyFilters {
         });
 
         // Update URL parameters
+        this.updateUrlWithFilters();
+        
+        // Use the SearchByMap instance to load properties
         if (this.searchByMap) {
-            this.searchByMap.updateUrlWithFilters();
-            // Reload properties with the updated filters
-            this.searchByMap.loadProperties(1).finally(() => {
-                // Hide loading indicator when properties are loaded
-                this.hideLoadingIndicator();
-            });
+            this.searchByMap.debouncedLoadProperties(1)
+                .then(() => {
+                    // Hide loading indicator when properties are loaded
+                    if (window.hideGlobalLoader) {
+                        window.hideGlobalLoader();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading properties:', error);
+                    // Hide loading indicator even if there's an error
+                    if (window.hideGlobalLoader) {
+                        window.hideGlobalLoader();
+                    }
+                });
+        } else {
+            console.error('SearchByMap instance not found');
+            if (window.hideGlobalLoader) {
+                window.hideGlobalLoader();
+            }
         }
     }
 
@@ -1752,6 +2396,18 @@ class PropertyFilters {
             }
         }
 
+        // Size range
+        const minSizeFilter = document.querySelector('.min-size-filter');
+        const maxSizeFilter = document.querySelector('.max-size-filter');
+        if (minSizeFilter) {
+            minSizeFilter.value = urlParams.get('MinSize');
+            globalFilters.minSize = parseInt(urlParams.get('MinSize'));
+        }
+        if (maxSizeFilter) {
+            maxSizeFilter.value = urlParams.get('MaxSize');
+            globalFilters.maxSize = parseInt(urlParams.get('MaxSize'));
+        }
+
         // Bedrooms
         if (urlParams.has('Beds')) {
             const bedroomsFilter = document.querySelector('.bedrooms-filter');
@@ -1806,7 +2462,22 @@ class PropertyFilters {
             return globalFilters[key] && globalFilters[key] !== 'null' && globalFilters[key] !== 0;
         })) {
             if (this.searchByMap) {
-                this.searchByMap.loadProperties(1);
+                // Don't load properties here - it will be loaded by the initialize method
+                // this.searchByMap.loadProperties(1);
+            }
+        }
+
+        // Sort order
+        if (urlParams.has('sort')) {
+            const sortValue = urlParams.get('sort');
+            if (sortOptions[sortValue]) {
+                globalFilters.sortOrder = sortValue;
+                
+                // Update sort dropdown if it exists
+                const sortDropdown = document.getElementById('property-sorting-dropdown');
+                if (sortDropdown) {
+                    sortDropdown.value = sortValue;
+                }
             }
         }
     }
@@ -2012,7 +2683,118 @@ class PropertyFilters {
             });
         });
     }
+
+    updateUrlWithFilters() {
+        const urlParams = new URLSearchParams(window.location.search);
+
+        // Clear existing filter parameters
+        for (const key of urlParams.keys()) {
+            if (key.startsWith('filter_') ||
+                key === 'Location' ||
+                key === 'PropertyType' ||
+                key === 'PMin' ||
+                key === 'PMax' ||
+                key === 'MinSize' ||
+                key === 'MaxSize' ||
+                key === 'Beds' ||
+                key === 'Baths' ||
+                key === 'beach' ||
+                key === 'golf' ||
+                key === 'exclusive' ||
+                key === 'modern' ||
+                key === 'new' ||
+                key === 'seaview' ||
+                key === 'investment' ||
+                key === 'min-built' ||
+                key === 'features' ||
+                key === 'sort') {
+                urlParams.delete(key);
+            }
+        }
+
+        // Add quick filters to URL
+        if (globalFilters.beach) urlParams.set('beach', 'true');
+        if (globalFilters.golf) urlParams.set('golf', 'true');
+        if (globalFilters.exclusive) urlParams.set('exclusive', 'true');
+        if (globalFilters.modern) urlParams.set('modern', 'true');
+        if (globalFilters.new) urlParams.set('new', 'true');
+        if (globalFilters.seaview) urlParams.set('seaview', 'true');
+        if (globalFilters.investment) urlParams.set('investment', 'true');
+
+        // Add advanced filters to URL (only if true)
+        if (globalFilters.minBuilt > 0) {
+            urlParams.set('MinSize', globalFilters.minBuilt);
+        } else if (globalFilters.minSize > 0) {
+            urlParams.set('MinSize', globalFilters.minSize);
+        }
+        
+        if (globalFilters.maxSize > 0) {
+            urlParams.set('MaxSize', globalFilters.maxSize);
+        }
+        
+        if (globalFilters.features && globalFilters.features !== 'any') urlParams.set('features', globalFilters.features);
+        if (globalFilters.sortOrder && globalFilters.sortOrder !== 'default') urlParams.set('sort', globalFilters.sortOrder);
+
+        // Add other filters with correct case and comma separation for multiple values
+        if (globalFilters.location) {
+            const locations = Array.isArray(globalFilters.location) ? globalFilters.location : [globalFilters.location];
+            if (locations.length > 0) {
+                urlParams.set('Location', locations.join(','));
+            }
+        }
+        if (globalFilters.propertyType) {
+            const propertyTypes = Array.isArray(globalFilters.propertyType) ? globalFilters.propertyType : [globalFilters.propertyType];
+            if (propertyTypes.length > 0) {
+                urlParams.set('PropertyType', propertyTypes.join(','));
+            }
+        }
+        if (globalFilters.minPrice > 0) {
+            urlParams.set('PMin', globalFilters.minPrice);
+        }
+        if (globalFilters.maxPrice > 0) {
+            urlParams.set('PMax', globalFilters.maxPrice);
+        }
+        if (globalFilters.minSize > 0) {
+            urlParams.set('MinSize', globalFilters.minSize);
+        }
+        if (globalFilters.maxSize > 0) {
+            urlParams.set('MaxSize', globalFilters.maxSize);
+        }
+        if (globalFilters.bedrooms) {
+            const bedrooms = Array.isArray(globalFilters.bedrooms) ? globalFilters.bedrooms : [globalFilters.bedrooms];
+            if (bedrooms.length > 0) {
+                urlParams.set('Beds', bedrooms.join(','));
+            }
+        }
+        if (globalFilters.bathrooms) {
+            const bathrooms = Array.isArray(globalFilters.bathrooms) ? globalFilters.bathrooms : [globalFilters.bathrooms];
+            if (bathrooms.length > 0) {
+                urlParams.set('Baths', bathrooms.join(','));
+            }
+        }
+
+        // Update URL without reloading the page
+        const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
+        window.history.pushState({}, '', newUrl);
+    }
 }
+
+// Initialize the map when the DOM is loaded
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        // Initialize only if not already initialized
+        if (!window.searchByMap) {
+            window.searchByMap = new SearchByMap();
+            // Initialize SearchByMap first
+            await window.searchByMap.initialize();
+            // Then initialize PropertyFilters
+            const propertyFilters = new PropertyFilters();
+            propertyFilters.init();
+        }
+    } catch (error) {
+        console.error('Error initializing map:', error);
+    }
+});
 
 // Add CSS animation for the spinner
 const style = document.createElement('style');
@@ -2023,3 +2805,125 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
+
+// Function to render a property card with the new premium design
+function renderPropertyCard(property) {
+    // Determine if the property has a status tag to display
+    let statusBadge = '';
+    if (property.is_new) {
+        statusBadge = '<div class="property-status status-new">New</div>';
+    } else if (property.is_exclusive) {
+        statusBadge = '<div class="property-status status-exclusive">Exclusive</div>';
+    } else if (property.is_reduced) {
+        statusBadge = '<div class="property-status status-reduced">Reduced</div>';
+    }
+    
+    // Generate the price display with optional negotiable indicator
+    const priceClass = property.is_negotiable ? 'property-price negotiable' : 'property-price';
+    
+    // Create property card element
+    const propertyCard = document.createElement('div');
+    propertyCard.className = 'property-card';
+    propertyCard.dataset.id = property.id;
+    propertyCard.innerHTML = `
+        ${statusBadge}
+        <div class="property-image">
+            <img src="${property.image}" alt="${property.title}">
+        </div>
+        <div class="property-details">
+            <div class="property-type">${property.property_type || 'Residential'}</div>
+            <div class="${priceClass}">€${formatPrice(property.price)}</div>
+            <div class="property-location">
+                <i class="fas fa-map-marker-alt"></i>
+                <span>${property.location}</span>
+            </div>
+            <div class="property-divider"></div>
+            <div class="property-features">
+            <div class="property-feature"> 
+               <span>${property.beds || ''} </span> <span>Bedrooms</span>
+            </div>
+
+            <div class="property-feature"> 
+               <span> ${property.baths || ''} </span><span>Bathrooms</span>
+            </div>
+
+            <div class="property-feature"> 
+                        <span> ${property.propertySize || ''} </span><span>sq ft</span>
+            </div>
+
+            <div class="property-feature"> 
+                        <span> ${property.propertySize || ''} </span><span>refid</span>
+
+            </div>
+            </div>
+            <div class="property-actions">
+                <a href="${property.url}" class="property-link">View Details</a>
+                <button class="property-favorite" data-id="${property.id}">
+                    <i class="far fa-heart"></i>
+                </button>
+            </div>
+        </div>
+    `;
+    
+    // Add click event to the favorite button
+    const favoriteBtn = propertyCard.querySelector('.property-favorite');
+    favoriteBtn.addEventListener('click', function(e) {
+        e.stopPropagation(); // Prevent card click
+        this.classList.toggle('active');
+        
+        // Toggle the heart icon between outlined and filled
+        const heartIcon = this.querySelector('i');
+        if (heartIcon.classList.contains('far')) {
+            heartIcon.classList.replace('far', 'fas');
+        } else {
+            heartIcon.classList.replace('fas', 'far');
+        }
+        
+        // Here you would normally also save this to localStorage or a database
+        const propertyId = this.dataset.id;
+        toggleFavoriteProperty(propertyId);
+    });
+    
+    // Make the card clickable to view details
+    propertyCard.addEventListener('click', function() {
+        window.location.href = property.url;
+    });
+    
+    return propertyCard;
+}
+
+// Helper function to format price with commas
+function formatPrice(price) {
+    return price.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+// Function to toggle a property as favorite
+function toggleFavoriteProperty(propertyId) {
+    let favorites = JSON.parse(localStorage.getItem('propertyFavorites') || '[]');
+    
+    if (favorites.includes(propertyId)) {
+        favorites = favorites.filter(id => id !== propertyId);
+    } else {
+        favorites.push(propertyId);
+    }
+    
+    localStorage.setItem('propertyFavorites', JSON.stringify(favorites));
+}
+
+// Function to initialize favorites from localStorage
+function initializeFavorites() {
+    const favorites = JSON.parse(localStorage.getItem('propertyFavorites') || '[]');
+    
+    // Mark all favorite buttons that match saved favorites
+    favorites.forEach(propertyId => {
+        const favoriteBtn = document.querySelector(`.property-favorite[data-id="${propertyId}"]`);
+        if (favoriteBtn) {
+            favoriteBtn.classList.add('active');
+            const heartIcon = favoriteBtn.querySelector('i');
+            heartIcon.classList.replace('far', 'fas');
+        }
+    });
+}
+
+// Call this when the property list is populated
+// document.addEventListener('DOMContentLoaded', initializeFavorites);
