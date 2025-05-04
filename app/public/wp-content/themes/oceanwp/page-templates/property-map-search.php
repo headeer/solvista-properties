@@ -42,8 +42,6 @@ get_header();
         /* Advanced filters */
         .advanced-filters-container {
             display: none;
-            padding: 15px 0;
-            border-top: 1px solid #eee;
             margin-top: 15px;
         }
         
@@ -794,6 +792,28 @@ jQuery(document).ready(function($) {
 </script>
 
 <div class="site-content">
+    <!-- Header Section -->
+    <div class="map-search-header">
+        <!-- Breadcrumbs -->
+        <div class="map-search-breadcrumbs">
+            <a href="/">Home</a>
+            <span class="separator">/</span>
+            <a href="/properties">Properties</a>
+            <span class="separator">/</span>
+            <span>Property Map Search</span>
+        </div>
+
+        <!-- Title Section -->
+        <div class="map-search-title">
+            <h1>Property Map Search</h1>
+        </div>
+        <div class="map-search-subtitle">
+            Explore properties across Costa del Sol with our interactive map search. Find your perfect home by location, price, and amenities.
+        </div>
+
+
+    </div>
+
     <!-- Filters Section -->
     <div class="filters-section">
         <form id="property-filters" class="filters-form">

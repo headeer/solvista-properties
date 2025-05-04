@@ -1823,10 +1823,10 @@ class SearchByMap {
                     <div class="price">${this.formatPrice(property.price)}</div>
                     <div class="location"><i class="fas fa-map-marker-alt"></i> ${property.location}</div>
                     <div class="features">
-                        <span>${property.beds || ''} </span> <span>Bedrooms</span>
-                        <span> ${property.baths || ''} </span><span>Bathrooms</span>
-                        <span> ${property.propertySize || ''} </span><span>sq ft</span>
-                        <span> ${property.propertySize || ''} </span><span>refid</span>
+                        <span>${property.beds || ''} Bedrooms</span>
+                        <span> ${property.baths || ''} Bathrooms</span>
+                        <span> ${property.propertySize || ''} sq ft</span>
+                        <span> ${property.propertySize || ''} refid</span>
                     </div>
                     <div class="popup-actions">
                         <a href="${property.url}" class="view-details-btn" target="_blank">View Details</a>
