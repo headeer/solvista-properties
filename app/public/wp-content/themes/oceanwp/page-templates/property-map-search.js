@@ -135,6 +135,105 @@ function addSortingStyles() {
             outline: none;
             border-color: #0073aa;
         }
+
+        /* Button Styles */
+        .view-details-btn, .property-link {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .view-details-btn:hover, .property-link:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .view-details-btn:active, .property-link:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Property Card Button Styles */
+        .property-card .property-link {
+            width: 100%;
+            margin-top: 15px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            padding: 12px 20px;
+            border-radius: 4px;
+            text-align: center;
+            display: block;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .property-card .property-link:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            color: white!important;
+        }
+
+        /* Popup Button Styles */
+        .property-popup .view-details-btn {
+            width: 100%;
+            margin-top: 15px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            padding: 12px 20px;
+            border-radius: 4px;
+            text-align: center;
+            display: block;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .property-popup .view-details-btn:hover {
+            opacity: 0.9;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Quick Filter Button Styles */
+        .quick-filter-button {
+            padding: 8px 16px;
+            background-color: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            color: #333;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .quick-filter-button:hover {
+            opacity: 0.9;
+            background-color: #e5e5e5;
+        }
+
+        .quick-filter-button.active {
+            background-color: #1a1a1a;
+            color: #ffffff;
+            border-color: #1a1a1a;
+        }
+
+        .quick-filter-button.active:hover {
+            opacity: 0.9;
+        }
     `;
     document.head.appendChild(style);
 }
@@ -426,8 +525,14 @@ class SearchByMap {
     }
 
     async loadProperties(page = 1) {
+        if (this.isLoading) {
+            console.log('Properties are already loading, skipping request');
+            return;
+        }
+
+        this.isLoading = true;
         this.currentPage = page;
-        debug('Loading properties, page:', page);
+        console.log('Loading properties, page:', page);
         
         try {
             // Show loader
@@ -435,7 +540,7 @@ class SearchByMap {
                 window.showGlobalLoader();
             }
 
-            // Build API URL with filter parameters using correct case
+            // Build API URL with filter parameters
             const params = new URLSearchParams();
 
             // Add filters with correct parameter names and comma separation for multiple values
@@ -492,7 +597,7 @@ class SearchByMap {
             if (globalFilters.sortOrder && globalFilters.sortOrder !== 'default') params.set('SortOrder', globalFilters.sortOrder);
 
             const apiUrl = `${this.config.apiUrl}?${params.toString()}`;
-            debug('API URL:', apiUrl);
+            console.log('API URL:', apiUrl);
 
             const response = await fetch(apiUrl, {
                 method: 'GET',
@@ -515,6 +620,11 @@ class SearchByMap {
             // Process properties
             this.properties = this.processProperties(data);
             this.totalPages = Math.ceil(this.properties.length / this.config.itemsPerPage);
+            
+            // Update URL with current filters
+            this.updateUrlWithFilters();
+            
+            // Display properties
             this.displayProperties();
         } catch (error) {
             console.error('Error loading properties:', error);
@@ -526,6 +636,7 @@ class SearchByMap {
             if (window.hideGlobalLoader) {
                 window.hideGlobalLoader();
             }
+            this.isLoading = false;
         }
     }
 
@@ -564,31 +675,29 @@ class SearchByMap {
             // Create marker with validated coordinates and offset
             const markerLatLng = [latitude + offset.lat, longitude + offset.lng];
 
-            // Construct the property URL
-            const propertyUrl = `/property/${property.reference}`;
-
             return {
                 id: property.reference,
                 reference: property.reference,
-                title: `Property ${property.reference}`,
+                title: property.reference,
                 price: property.price || 0,
                 location: property.location || 'Location not specified',
                 beds: property.beds || "",
                 baths: property.baths || "",
                 propertySize: property.propertySize || '',
+                area: property.area || '',
                 image: property.pictureUrl,
                 status: 'For Sale',
-                propertyType: 'Property',
+                propertyType: property.propertyType || 'Property',
                 latitude: markerLatLng[0],
                 longitude: markerLatLng[1],
                 province: property.province,
-                description: '',
+                description: property.description || '',
                 features: [],
                 dateAdded: new Date().toISOString(),
                 isFeatured: false,
                 isNew: false,
                 isReduced: false,
-                url: propertyUrl // Use the constructed URL
+                url: property.propertyUrl // Use the URL directly from the API response
             };
         });
     }
@@ -959,6 +1068,9 @@ class SearchByMap {
         // Update URL without reloading the page
         const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
         window.history.pushState({}, '', newUrl);
+        
+        // Log the updated URL for debugging
+        console.log('Updated URL:', newUrl);
     }
 
     setupEventListeners() {
@@ -1052,43 +1164,76 @@ class SearchByMap {
             // Add map movement detection
             if (this.map) {
                 let mapMoveTimeout;
-                this.map.on('moveend', () => {
-                    if (mapMoveTimeout) {
-                        clearTimeout(mapMoveTimeout);
-                    }
+                let isMapLoading = false;
 
-                    mapMoveTimeout = setTimeout(() => {
+                // Disable map movement while loading
+                const disableMapMovement = () => {
+                    if (this.map) {
+                        this.map.dragging.disable();
+                        this.map.touchZoom.disable();
+                        this.map.doubleClickZoom.disable();
+                        this.map.scrollWheelZoom.disable();
+                        this.map.boxZoom.disable();
+                        this.map.keyboard.disable();
+                    }
+                };
+
+                // Enable map movement after loading
+                const enableMapMovement = () => {
+                    if (this.map) {
+                        this.map.dragging.enable();
+                        this.map.touchZoom.enable();
+                        this.map.doubleClickZoom.enable();
+                        this.map.scrollWheelZoom.enable();
+                        this.map.boxZoom.enable();
+                        this.map.keyboard.enable();
+                    }
+                };
+
+                this.map.on('moveend', () => {
+                    if (isMapLoading) return;
+                    if (mapMoveTimeout) clearTimeout(mapMoveTimeout);
+                    mapMoveTimeout = setTimeout(async () => {
                         const bounds = this.map.getBounds();
                         const center = bounds.getCenter();
-                        
-                        // Find cities in view
                         const citiesInView = [];
                         for (const [city, coords] of Object.entries(cityCoordinates)) {
-                            const distance = this.calculateDistance(
-                                center.lat,
-                                center.lng,
-                                coords.lat,
-                                coords.lng
-                            );
-
-                            // Use 10km as default radius for city detection
-                            if (distance <= 10) {
-                                citiesInView.push(city);
-                            }
+                            const distance = this.calculateDistance(center.lat, center.lng, coords.lat, coords.lng);
+                            if (distance <= 10) citiesInView.push(city);
                         }
-
-                        // Update filters if cities are found
-                        if (citiesInView.length > 0) {
-                            // Use the global searchByMap instance
-                            if (window.searchByMap) {
-                                window.searchByMap.updateFilters({
-                                    location: citiesInView.join(',')
-                                });
-                            } else {
-                                console.warn('SearchByMap instance not found during map movement');
+                        if (!arraysEqual(citiesInView, lastVisibleCities)) {
+                            lastVisibleCities = citiesInView.slice();
+                            globalFilters.location = citiesInView;
+                            // Update query params
+                            if (typeof this.updateUrlWithFilters === 'function') {
+                                this.updateUrlWithFilters();
+                            } else if (window.searchByMap && typeof window.searchByMap.updateUrlWithFilters === 'function') {
+                                window.searchByMap.updateUrlWithFilters();
                             }
+                            // Update location filter UI
+                            if (typeof this.updateCheckboxesFromFilters === 'function') {
+                                this.updateCheckboxesFromFilters(globalFilters);
+                            } else if (window.searchByMap && typeof window.searchByMap.updateCheckboxesFromFilters === 'function') {
+                                window.searchByMap.updateCheckboxesFromFilters(globalFilters);
+                            }
+                            if (window.showGlobalLoader) {
+                                window.showGlobalLoader();
+                                isMapLoading = true;
+                                disableMapMovement();
+                            }
+                            try {
+                                await this.loadProperties(1);
+                            } catch (error) {
+                                console.error('Error loading properties:', error);
+                            } finally {
+                                if (window.hideGlobalLoader) window.hideGlobalLoader();
+                                isMapLoading = false;
+                                enableMapMovement();
+                            }
+                        } else {
+                            console.log('Cities in view did not change, skipping API call.');
                         }
-                    }, 300);
+                    }, 500);
                 });
             }
 
@@ -1295,15 +1440,15 @@ class SearchByMap {
                 });
             }
 
-            // Max Price filter - handle checkboxes
+            // Price To filter - handle checkboxes
             const maxPriceCheckboxes = document.querySelectorAll('input[name="max-price"]');
-            debug('Max price checkboxes found:', maxPriceCheckboxes.length);
+            debug('Price to checkboxes found:', maxPriceCheckboxes.length);
             if (maxPriceCheckboxes.length > 0) {
                 maxPriceCheckboxes.forEach(checkbox => {
                     checkbox.addEventListener('change', (e) => {
-                        debug('Max price checkbox changed:', checkbox.value);
+                        debug('Price to checkbox changed:', checkbox.value);
                         
-                        // Uncheck other max price checkboxes
+                        // Uncheck other price to checkboxes
                         maxPriceCheckboxes.forEach(cb => {
                             if (cb !== checkbox) {
                                 cb.checked = false;
@@ -1318,7 +1463,7 @@ class SearchByMap {
                         const selectHeader = checkbox.closest('.custom-select')?.querySelector('.selected-text');
                         if (selectHeader) {
                             const label = checkbox.nextElementSibling?.querySelector('span');
-                            selectHeader.textContent = label ? label.textContent : 'Choose max price';
+                            selectHeader.textContent = label ? label.textContent : 'Choose price to';
                         }
                         
                         this.updateUrlWithFilters();
@@ -1326,16 +1471,16 @@ class SearchByMap {
                     });
                 });
             } else {
-                console.warn('No max price checkboxes found with name="max-price"');
+                console.warn('No price to checkboxes found with name="max-price"');
                 // Try to find checkboxes with alternative naming
                 const altMaxPriceCheckboxes = document.querySelectorAll('.custom-select[data-filter="max-price"] input[type="checkbox"]');
-                debug('Alternative max price checkboxes found:', altMaxPriceCheckboxes.length);
+                debug('Alternative price to checkboxes found:', altMaxPriceCheckboxes.length);
                 if (altMaxPriceCheckboxes.length > 0) {
                     altMaxPriceCheckboxes.forEach(checkbox => {
                         checkbox.addEventListener('change', (e) => {
-                            debug('Alt max price checkbox changed:', checkbox.value);
+                            debug('Alt price to checkbox changed:', checkbox.value);
                             
-                            // Uncheck other max price checkboxes
+                            // Uncheck other price to checkboxes
                             altMaxPriceCheckboxes.forEach(cb => {
                                 if (cb !== checkbox) {
                                     cb.checked = false;
@@ -1350,7 +1495,7 @@ class SearchByMap {
                             const selectHeader = checkbox.closest('.custom-select')?.querySelector('.selected-text');
                             if (selectHeader) {
                                 const label = checkbox.nextElementSibling?.querySelector('span');
-                                selectHeader.textContent = label ? label.textContent : 'Choose max price';
+                                selectHeader.textContent = label ? label.textContent : 'Choose price to';
                             }
                             
                             this.updateUrlWithFilters();
@@ -1817,16 +1962,16 @@ class SearchByMap {
         return `
             <div class="property-popup">
                 <div class="property-popup-image">
-                    <img src="${property.image || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJYAAABkCAYAAABkW8nwAAADT0lEQVR4Xu3YQU7CQBSG0XGp7H8DrpCNa5eq/02wsjQx4QpC9c17OQmJ0unfb+bo9PV6vV78IUAYFIG1YNWozHvDClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClYFwePx+Lher7/fx+PxOJ/Ph+l0Os1F3O/3r7Omy+UyXK/X6/CZsra/XWvZeF6/rP94/qM1/e/7/Ot+wSrgTZhms9nw4+1q7bgnCxez2exrzcVi8XXdcv0E5AlitVp9rpv3W87Pt46X+zn2/MVehnVk0O/WPs5tdGtbXnc4HIbj8TgcDofher3efq3b+Xa7/XrNL2HL9e12O6xWq2GxWAy73W5YLpfDdrud9z3fb7fbzTDn80fn73a7+eVlYO33+3lfz3uez/lfr9f5pbfdbo9sfHjNYR1G9O0Fx+PxDGGCNCFYLpc3GOv1+lwul8NmsxlWq9Xw1xdYp9NpnguWPM+r2+12eP5Tul6v77jSrfn4sF68ElgvBjVfbkKRbnM8Hm8T0m1Sw1mv13fPV/bFVXq+cnVzeZ5X18O+5ytX+m5+7/zFtubLX3uB9SJiy7DNbdKJpvssp/V6vTxDmVCdz+fheUwp44Qzoys/oa7n13KiOU8jXZ2S5/yEK/ub+8n+Jp7Zmwxr7Xcez7vdb8B6AdCEJZPp9Xo9j++5+ix3mzRXnqTZZwYp3S3jl0FJjrtdLWOYIc1+Jqoz7HStPM+wbTabO9Tp9DLeSfdaXveEMVP6dNF0w+xnhnb+Z4vbvvK5+f/5y7hXwfqJVH6Xplvk9yn5QZlhffcFMzaV0clnc9c8Y5ZBzYhm/DK26ULpZrnOrGy9Xs/rmzV1a8v6dL90yQxtnmeks9cM6YxpdrfcXf6tOhPzHGn282x/P3HmtWsAlnEUKMACq0igMNqOBaygBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURof9AXTSRXwu84FQAAAAAElFTkSuQmCC'}" alt="${property.title}">
+                    <img src="${property.image || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJYAAABkCAYAAABkW8nwAAADT0lEQVR4Xu3YQU7CQBSG0XGp7H8DrpCNa5eq/02wsjQx4QpC9c17OQmJ0unfb+bo9PV6vV78IUAYFIG1YNWozHvDClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClYFwePx+Lher7/fx+PxOJ/Ph+l0Os1F3O/3r7Omy+UyXK/X6/CZsra/XWvZeF6/rP94/qM1/e/7/Ot+wSrgTZhms9nw4+1q7bgnCxez2exrzcVi8XXdcv0E5AlitVp9rpv3W87Pt46X+zn2/MVehnVk0O/WPs5tdGtbXnc4HIbj8TgcDofher3efq3b+Xa7/XrNL2HL9e12O6xWq2GxWAy73W5YLpfDdrud9z3fb7fbzTDn80fn73a7+eVlYO33+3lfz3uez/lfr9f5pbfdbo9sfHjNYR1G9O0Fx+PxDGGCNCFYLpc3GOv1+lwul8NmsxlWq9Xw1xdYp9NpnguWPM+r2+12eP5Tul6v77jSrfn4sF68ElgvBjVfbkKRbnM8Hm8T0m1Sw1mv13fPV/bFVXq+cnVzeZ5X18O+5ytX+m5+7/zFtubLX3uB9SJiy7DNbdKJpvssp/V6vTxDmVCdz+fheUwp44Qzoys/oa7n13KiOU8jXZ2S5/yEK/ub+8n+Jp7Zmwxr7Xcez7vdb8B6AdCEJZPp9Xo9j++5+ix3mzRXnqTZZwYp3S3jl0FJjrtdLWOYIc1+Jqoz7HStPM+wbTabO9Tp9DLeSfdaXveEMVP6dNF0w+xnhnb+Z4vbvvK5+f/5y7hXwfqJVH6Xplvk9yn5QZlhffcFMzaV0clnc9c8Y5ZBzYhm/DK26ULpZrnOrGy9Xs/rmzV1a8v6dL90yQxtnmeks9cM6YxpdrfcXf6tOhPzHGn282x/P3HmtWsAlnEUKMACq0igMNqOBaygBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURof9AXTSRXwu84FQAAAAAElFTkSuQmCC'}" alt="${property.title}">
                 </div>
                 <div class="property-popup-content">
                     <div class="price">${this.formatPrice(property.price)}</div>
                     <div class="location"><i class="fas fa-map-marker-alt"></i> ${property.location}</div>
                     <div class="features">
-                        <span>${property.beds || ''} Bedrooms</span>
-                        <span> ${property.baths || ''} Bathrooms</span>
-                        <span> ${property.propertySize || ''} sq ft</span>
-                        <span> ${property.propertySize || ''} refid</span>
+                        <span> ${property.beds === 1 ? 'Bedroom' : 'Bedrooms'}: ${property.beds || ''}</span>
+                        <span> ${property.baths === 1 ? 'Bathroom' : 'Bathrooms'}: ${property.baths || ''}</span>
+                        <span>sq ft: ${property.propertySize || ''}</span>
+                        <span>ref. id: ${property.propertySize || ''}</span>
                     </div>
                     <div class="popup-actions">
                         <a href="${property.url}" class="view-details-btn" target="_blank">View Details</a>
@@ -1851,20 +1996,20 @@ class SearchByMap {
             <img src="${imageUrl}" alt="${property.title}">
         </div>
         <div class="property-details">
-            <div class="property-title">${property.location}</div>
-            <div class="property-subtitle">${property.area || ''}</div>
+        <div class="property-title-container"><div class="property-title">${property.location}</div> 
+        <div class="property-price">${this.formatPrice(property.price)}</div>
+        </div>
+            
 
-            <div class="property-price">${this.formatPrice(property.price)}</div>
-            <div class="property-location">
-                <i class="fas fa-map-marker-alt"></i> ${property.location}
-            </div>
+            <div class="property-description">${property.description.length > 80 ? property.description.substring(0, 80) + '...' : property.description}</div>
+           
              <div class="property-features">
             <div class="property-feature"> 
-               <span>${property.beds || ''} </span> <span>Bedrooms</span>
+               <span>${property.beds || ''} </span> <span>${property.beds === 1 ? 'Bedroom' : 'Bedrooms'}</span>
             </div>
 
             <div class="property-feature"> 
-               <span> ${property.baths || ''} </span><span>Bathrooms</span>
+               <span> ${property.baths || ''} </span><span>${property.baths === 1 ? 'Bathroom' : 'Bathrooms'}</span>
             </div>
 
             <div class="property-feature"> 
@@ -2174,28 +2319,34 @@ class SearchByMap {
 
     // Helper function to calculate distance between two points in km
     calculateDistance(lat1, lon1, lat2, lon2) {
-        const R = 6371; // Earth's radius in km
-        const dLat = (lat2 - lat1) * Math.PI / 180;
-        const dLon = (lon2 - lon1) * Math.PI / 180;
-        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        return R * c;
+        const R = 6371; // Radius of the earth in km
+        const dLat = this.deg2rad(lat2 - lat1);
+        const dLon = this.deg2rad(lon2 - lon1);
+        const a = 
+            Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(this.deg2rad(lat1)) * Math.cos(this.deg2rad(lat2)) * 
+            Math.sin(dLon/2) * Math.sin(dLon/2); 
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+        const distance = R * c; // Distance in km
+        return distance;
+    }
+
+    deg2rad(deg) {
+        return deg * (Math.PI/180);
     }
 
     // Initialize max price filter
     initializeMaxPriceFilter() {
         try {
-            debug('Initializing max price filter');
+            debug('Initializing price to filter');
             const maxPriceCheckboxes = document.querySelectorAll('input[name="max-price"]');
-            debug('Found max price checkboxes:', maxPriceCheckboxes.length);
+            debug('Found price to checkboxes:', maxPriceCheckboxes.length);
             
             // Set up event handlers
             maxPriceCheckboxes.forEach(checkbox => {
                 checkbox.addEventListener('change', (e) => {
                     const value = checkbox.value;
-                    debug('Max price changed to:', value);
+                    debug('Price to changed to:', value);
                     
                     // Uncheck other checkboxes
                     maxPriceCheckboxes.forEach(cb => {
@@ -2211,7 +2362,7 @@ class SearchByMap {
                     const selectHeader = checkbox.closest('.custom-select')?.querySelector('.selected-text');
                     if (selectHeader) {
                         const label = checkbox.nextElementSibling?.querySelector('span');
-                        selectHeader.textContent = label ? label.textContent : 'Choose max price';
+                        selectHeader.textContent = label ? label.textContent : 'Choose price to';
                     }
                     
                     // Update URL and load properties (use updateFilters to prevent double loading)
@@ -2223,7 +2374,7 @@ class SearchByMap {
             const urlParams = new URLSearchParams(window.location.search);
             if (urlParams.has('PMax')) {
                 const maxPrice = urlParams.get('PMax');
-                debug('Setting initial max price from URL:', maxPrice);
+                debug('Setting initial price to from URL:', maxPrice);
                 
                 // Find and check the matching checkbox
                 const matchingCheckbox = Array.from(maxPriceCheckboxes).find(cb => 
@@ -2236,7 +2387,7 @@ class SearchByMap {
                     const selectHeader = matchingCheckbox.closest('.custom-select')?.querySelector('.selected-text');
                     if (selectHeader) {
                         const label = matchingCheckbox.nextElementSibling?.querySelector('span');
-                        selectHeader.textContent = label ? label.textContent : 'Choose max price';
+                        selectHeader.textContent = label ? label.textContent : 'Choose price to';
                     }
                     
                     // Update the filter without triggering a load (will be done after initialization)
@@ -2244,7 +2395,7 @@ class SearchByMap {
                 }
             }
         } catch (error) {
-            console.error('Error initializing max price filter:', error);
+            console.error('Error initializing price to filter:', error);
         }
     }
 }
@@ -2840,11 +2991,11 @@ function renderPropertyCard(property) {
             <div class="property-divider"></div>
             <div class="property-features">
             <div class="property-feature"> 
-               <span>${property.beds || ''} </span> <span>Bedrooms</span>
+               <span>${property.beds || ''} </span> <span>${property.beds === 1 ? 'Bedroom' : 'Bedrooms'}</span>
             </div>
 
             <div class="property-feature"> 
-               <span> ${property.baths || ''} </span><span>Bathrooms</span>
+               <span> ${property.baths || ''} </span><span>${property.baths === 1 ? 'Bathroom' : 'Bathrooms'}</span>
             </div>
 
             <div class="property-feature"> 
@@ -2853,7 +3004,6 @@ function renderPropertyCard(property) {
 
             <div class="property-feature"> 
                         <span> ${property.propertySize || ''} </span><span>refid</span>
-
             </div>
             </div>
             <div class="property-actions">
@@ -2927,3 +3077,15 @@ function initializeFavorites() {
 
 // Call this when the property list is populated
 // document.addEventListener('DOMContentLoaded', initializeFavorites);
+
+let lastVisibleCities = [];
+function arraysEqual(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    const sortedA = a.slice().sort();
+    const sortedB = b.slice().sort();
+    for (let i = 0; i < sortedA.length; i++) {
+        if (sortedA[i] !== sortedB[i]) return false;
+    }
+    return true;
+}

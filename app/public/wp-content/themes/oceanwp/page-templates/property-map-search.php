@@ -562,6 +562,17 @@ get_header();
             -webkit-box-orient: vertical;
             overflow: hidden;
             text-overflow: ellipsis;
+            font-family: var( --e-global-typography-85f589e-font-family ), Sans-serif;
+    font-size: var( --e-global-typography-85f589e-font-size );
+    font-weight: var( --e-global-typography-85f589e-font-weight );
+    text-transform: var( --e-global-typography-85f589e-text-transform );
+    font-style: var( --e-global-typography-85f589e-font-style );
+    text-decoration: var( --e-global-typography-85f589e-text-decoration );
+    line-height: var( --e-global-typography-85f589e-line-height );
+    letter-spacing: var( --e-global-typography-85f589e-letter-spacing );
+    font-weight: 500;
+    font-size: 30px!important;
+    color: rgb(76, 75, 66)!important;
         }
         
         /* Property price */
@@ -619,6 +630,12 @@ get_header();
             display: flex;
             align-items: center;
             gap: 4px;
+            color: rgb(76, 75, 66);
+            font-size: 16px;
+        }
+        .property-feature span{
+            color: rgb(76, 75, 66);
+            font-size: 14px;
         }
         
         .property-feature i {
@@ -690,43 +707,39 @@ get_header();
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(255, 255, 255, 0.9);
+            background-color: rgba(255, 255, 255, 0.6);
             display: flex;
             justify-content: center;
             align-items: center;
             z-index: 9999;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
         }
-        
-        .global-loader-content {
-            text-align: center;
+
+        .global-loader.visible {
+            visibility: visible;
+            opacity: 0.6;
+        }
+
+        .global-loader .loader-content {
+            background: white;
             padding: 20px;
             border-radius: 8px;
-            background-color: white;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
         }
-        
-        .global-loader-spinner {
-            width: 50px;
-            height: 50px;
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #ea682f;
+
+        .global-loader .loader-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
             border-radius: 50%;
             animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
+            margin: 0 auto 10px;
         }
-        
-        .global-loader-text {
-            font-size: 18px;
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 5px;
-        }
-        
-        .global-loader-subtext {
-            font-size: 14px;
-            color: #666;
-        }
-        
+
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -1240,7 +1253,7 @@ jQuery(document).ready(function($) {
 
                 <!-- Price -->
                 <div class="form-group">
-                    <label for="price" class="form-label">Price</label>
+                    <label for="price" class="form-label">Price From</label>
                     <div class="custom-select price-filter" data-filter="price">
                         <div class="select-header">
                             <span class="selected-text">Choose price</span>
@@ -1807,70 +1820,68 @@ jQuery(document).ready(function($) {
                         </div>
                     </div>
                     
-                    <!-- Max Price -->
-                    <div class="form-group">
-                        <label for="max-price-select" class="form-label">Max Price</label>
-                        <div class="custom-select" data-filter="max-price">
-                            <div class="select-header">
-                                <span class="selected-text">Choose max price</span>
-                                <span class="select-arrow">
-                                    <svg class="arrow-svg" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                        <path d="M7 14.5l5-5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                                    </svg>
-                                </span>
+                    <!-- Price To -->
+                    <div class="custom-select" data-filter="max-price">
+                        <label for="max-price-select" class="form-label">Price To</label>
+                        <div class="select-header">
+                            <span class="selected-text">Choose price to</span>
+                            <span class="select-arrow">
+                                <svg class="arrow-svg" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M7 14.5l5-5 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                                </svg>
+                            </span>
+                        </div>
+                        <div class="select-dropdown">
+                            <div class="search-box">
+                                <input type="text" placeholder="Search price to...">
                             </div>
-                            <div class="select-dropdown">
-                                <div class="search-box">
-                                    <input type="text" placeholder="Search max price...">
-                                </div>
-                                <hr class="select-divider">
-                                <div class="options-container">
-                                    <div class="option-group">
-                                        <div class="group-header">
-                                            <div class="checkbox-wrapper-4">
-                                                <input class="inp-cbx" id="max-price-any" type="checkbox" name="max-price" value="any"/>
-                                                <label class="cbx" for="max-price-any">
-                                                    <span>Any Price</span>
-                                                </label>
-                                            </div>
+                            <hr class="select-divider">
+                            <div class="options-container">
+                                <div class="option-group">
+                                    <div class="group-header">
+                                        <div class="checkbox-wrapper-4">
+                                            <input class="inp-cbx" id="max-price-any" type="checkbox" name="max-price" value="any"/>
+                                            <label class="cbx" for="max-price-any">
+                                                <span>Any Price</span>
+                                            </label>
                                         </div>
-                                        <div class="group-items">
-                                            <div class="checkbox-wrapper-4">
-                                                <input class="inp-cbx" id="max-price-250000" type="checkbox" name="max-price" value="250000" data-parent="any"/>
-                                                <label class="cbx" for="max-price-250000">
-                                                    <span>Up to €250,000</span>
-                                                </label>
-                                            </div>
-                                            <div class="checkbox-wrapper-4">
-                                                <input class="inp-cbx" id="max-price-500000" type="checkbox" name="max-price" value="500000" data-parent="any"/>
-                                                <label class="cbx" for="max-price-500000">
-                                                    <span>Up to €500,000</span>
-                                                </label>
-                                            </div>
-                                            <div class="checkbox-wrapper-4">
-                                                <input class="inp-cbx" id="max-price-750000" type="checkbox" name="max-price" value="750000" data-parent="any"/>
-                                                <label class="cbx" for="max-price-750000">
-                                                    <span>Up to €750,000</span>
-                                                </label>
-                                            </div>
-                                            <div class="checkbox-wrapper-4">
-                                                <input class="inp-cbx" id="max-price-1000000" type="checkbox" name="max-price" value="1000000" data-parent="any"/>
-                                                <label class="cbx" for="max-price-1000000">
-                                                    <span>Up to €1,000,000</span>
-                                                </label>
-                                            </div>
-                                            <div class="checkbox-wrapper-4">
-                                                <input class="inp-cbx" id="max-price-2000000" type="checkbox" name="max-price" value="2000000" data-parent="any"/>
-                                                <label class="cbx" for="max-price-2000000">
-                                                    <span>Up to €2,000,000</span>
-                                                </label>
-                                            </div>
-                                            <div class="checkbox-wrapper-4">
-                                                <input class="inp-cbx" id="max-price-5000000" type="checkbox" name="max-price" value="5000000" data-parent="any"/>
-                                                <label class="cbx" for="max-price-5000000">
-                                                    <span>Up to €5,000,000</span>
-                                                </label>
-                                            </div>
+                                    </div>
+                                    <div class="group-items">
+                                        <div class="checkbox-wrapper-4">
+                                            <input class="inp-cbx" id="max-price-250000" type="checkbox" name="max-price" value="250000" data-parent="any"/>
+                                            <label class="cbx" for="max-price-250000">
+                                                <span>Up to €250,000</span>
+                                            </label>
+                                        </div>
+                                        <div class="checkbox-wrapper-4">
+                                            <input class="inp-cbx" id="max-price-500000" type="checkbox" name="max-price" value="500000" data-parent="any"/>
+                                            <label class="cbx" for="max-price-500000">
+                                                <span>Up to €500,000</span>
+                                            </label>
+                                        </div>
+                                        <div class="checkbox-wrapper-4">
+                                            <input class="inp-cbx" id="max-price-750000" type="checkbox" name="max-price" value="750000" data-parent="any"/>
+                                            <label class="cbx" for="max-price-750000">
+                                                <span>Up to €750,000</span>
+                                            </label>
+                                        </div>
+                                        <div class="checkbox-wrapper-4">
+                                            <input class="inp-cbx" id="max-price-1000000" type="checkbox" name="max-price" value="1000000" data-parent="any"/>
+                                            <label class="cbx" for="max-price-1000000">
+                                                <span>Up to €1,000,000</span>
+                                            </label>
+                                        </div>
+                                        <div class="checkbox-wrapper-4">
+                                            <input class="inp-cbx" id="max-price-2000000" type="checkbox" name="max-price" value="2000000" data-parent="any"/>
+                                            <label class="cbx" for="max-price-2000000">
+                                                <span>Up to €2,000,000</span>
+                                            </label>
+                                        </div>
+                                        <div class="checkbox-wrapper-4">
+                                            <input class="inp-cbx" id="max-price-5000000" type="checkbox" name="max-price" value="5000000" data-parent="any"/>
+                                            <label class="cbx" for="max-price-5000000">
+                                                <span>Up to €5,000,000</span>
+                                            </label>
                                         </div>
                                     </div>
                                 </div>
