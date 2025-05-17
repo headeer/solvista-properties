@@ -69,10 +69,8 @@ get_header();
         .filter-select {
             position: relative;
             width: 100%;
-            border: 1px solid #ddd;
-            border-radius: 6px;
+            border-radius: 4px;
             background-color: #fff;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
             transition: all 0.3s ease;
         }
         
@@ -573,6 +571,9 @@ get_header();
     font-weight: 500;
     font-size: 30px!important;
     color: rgb(76, 75, 66)!important;
+    @media (min-width: 768px) {
+        font-size: 24px!important;
+    }
         }
         
         /* Property price */
@@ -582,6 +583,9 @@ get_header();
             color: #ea682f;
             display: flex;
             align-items: center;
+            @media (min-width: 768px) {
+        font-size: 24px!important;
+    }
         }
         
         .property-price.negotiable::after {
@@ -1304,7 +1308,7 @@ jQuery(document).ready(function($) {
                                             </label>
                                         </div>
                                         <div class="checkbox-wrapper-4">
-                                            <input class="inp-cbx" id="price-250000" type="checkbox" name="price" value="250000" data-parent="all"/>
+                                            <input class="inp-cbx" id="price-250000" type="checkbox" name="price" value="250000" data-parent="all" checked/>
                                             <label class="cbx" for="price-250000">
                                                 <span>€ 250,000</span>
                                             </label>

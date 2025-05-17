@@ -478,19 +478,21 @@
   display: flex;
   flex-direction: column;
   padding: 2rem;
-  gap: 1.5rem;
+  gap: 20px;
 }
 
 .property-title {
-  font-size: 30px!important;
-    color: rgb(76, 75, 66)!important;
-  margin: 0;
+  font-size: 1.1em;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .property-price {
   margin: 0;
-  font-size: 30px!important;
+  font-size: 24px!important;
   line-height: 1.2;
 }
 
@@ -707,7 +709,6 @@
   justify-content: space-between;
   align-items: center;
   padding: 8px 12px;
-  background-color: #f8f8f8;
   border: 1px solid #ddd;
   border-radius: 4px;
   cursor: pointer;
@@ -784,7 +785,7 @@
 
 .property-details {
   flex: 1;
-  padding: 0.75rem;
+  padding: 20px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -1490,12 +1491,27 @@
 }
 .property-title-container {
   display: flex;
-  flex-direction: row;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
 }
-.property-title-container .property-title {
-  color: rgb(76, 75, 66);
+.property-title {
+  flex: 1 1 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 1.1em;
+  font-weight: 600;
+}
+.property-price {
+  flex-shrink: 0;
+  margin-left: 10px;
+  white-space: nowrap;
+  font-size: 1.1em;
+  font-weight: 600;
 }
 .property-description {
   font-size: 16px;
@@ -2434,7 +2450,7 @@ body {
 }
 
 .leaflet-marker-icon.marker-cluster div div {
-  background-color: rgba(234, 104, 47, 0.6);
+  background-color: rgba(234, 104, 47, 1);
   border-radius: 50%;
   text-align: center;
   color: white;
@@ -2443,8 +2459,7 @@ body {
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 80%;
-  border: 2px solid white;
+  height: 76%;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
@@ -2984,4 +2999,31 @@ textarea {
   background: #EA682F;
   color: #fff;
   border-color: #EA682F;
+}
+
+/* Add a class for row layout when title or price is long */
+.property-title-container.row-layout {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25em;
+}
+.property-title-container.row-layout .property-title,
+.property-title-container.row-layout .property-price {
+  font-size: 1.1em;
+  margin: 0;
+  padding: 0;
+  white-space: normal;
+  text-overflow: initial;
+  overflow: visible;
+}
+
+/* Optionally, make sure the default is flex-row */
+.property-title-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  flex-direction: row;
 }

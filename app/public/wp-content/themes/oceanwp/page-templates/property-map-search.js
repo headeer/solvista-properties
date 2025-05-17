@@ -2,7 +2,7 @@
 const globalFilters = {
     location: 'Málaga',
     propertyType: '',
-    minPrice: 0,
+    minPrice: 250000, // Default to 250,000 EUR
     maxPrice: 0,
     minSize: 0,
     maxSize: 0,
@@ -37,7 +37,6 @@ const DEBUG = true;
 // Helper function for logging
 function debug(...args) {
     if (DEBUG) {
-        console.log(...args);
     }
 }
 
@@ -238,6 +237,12 @@ function addSortingStyles() {
     document.head.appendChild(style);
 }
 
+// Add city boundaries data
+// Remove static cityBoundaries
+// Add city boundary cache and layers
+const cityBoundaryCache = {};
+let cityBoundaryLayers = {};
+
 // Property Search Map Script
 class SearchByMap {
     constructor(config = {}) {
@@ -263,6 +268,10 @@ class SearchByMap {
         this.debounceTimer = null;
         this.debounceDelay = 1000; // 1 second debounce
         this.isMapUpdating = false;
+        this.propertyOffsets = new Map(); // Store offsets persistently
+        this.cityOverlay = null;
+        this.cityBoundary = null;
+        this.mapStyle = null;
         
         // Store instance in window object for global access
         window.searchByMap = this;
@@ -363,11 +372,14 @@ class SearchByMap {
             wheelDebounceTime: 100 // Add debounce to wheel zooming
         });
 
-        // Add OpenStreetMap tile layer
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        // Add OpenStreetMap tile layer with custom style
+        this.mapStyle = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
             maxZoom: 19
         }).addTo(this.map);
+
+        // Add grayscale filter to map
+        this.addGrayscaleFilter();
 
         // Prevent zoom out beyond minZoom
         this.map.on('zoomend', () => {
@@ -429,6 +441,127 @@ class SearchByMap {
         // Add debounced event listeners for map movement and zoom
         this.map.on('moveend', () => this.debouncedCheckVisibleCities());
         this.map.on('zoomend', () => this.debouncedCheckVisibleCities());
+    }
+
+    addGrayscaleFilter() {
+        const style = document.createElement('style');
+        style.textContent = `
+            /* Apply grayscale only to map tiles */
+            .leaflet-container .leaflet-tile-pane {
+                filter: grayscale(100%) brightness(1.1);
+            }
+            
+            /* When city is selected, make map slightly darker */
+            .leaflet-container.city-selected .leaflet-tile-pane {
+                filter: grayscale(100%) brightness(1.1) contrast(0.9);
+            }
+
+            /* Ensure markers and popups stay in color */
+            .leaflet-marker-icon,
+            .leaflet-popup-content-wrapper,
+            .leaflet-popup-tip,
+            .marker-cluster,
+            .price-marker {
+                filter: none !important;
+            }
+
+            /* Make sure popups are visible and in color */
+            .leaflet-popup {
+                filter: none !important;
+            }
+
+            /* Ensure marker clusters stay in color */
+            .marker-cluster-small,
+            .marker-cluster-medium,
+            .marker-cluster-large {
+                filter: none !important;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // Add this method to fetch and draw boundaries for multiple cities
+    async updateCityOverlays(cityNames) {
+        if (!this.map) {
+            console.log('[updateCityOverlays] Map not initialized');
+            return;
+        }
+        console.log('[updateCityOverlays] Updating overlays for:', cityNames);
+        // Remove overlays for cities no longer selected
+        for (const city in cityBoundaryLayers) {
+            if (!cityNames.includes(city)) {
+                console.log(`[updateCityOverlays] Removing overlay for city: ${city}`);
+                this.map.removeLayer(cityBoundaryLayers[city]);
+                delete cityBoundaryLayers[city];
+            }
+        }
+        // For each city, fetch and draw boundary
+        for (const cityName of cityNames) {
+            if (cityBoundaryLayers[cityName]) {
+                console.log(`[updateCityOverlays] Overlay already exists for: ${cityName}`);
+                continue; // Already drawn
+            }
+            let geojson = cityBoundaryCache[cityName];
+            if (!geojson) {
+                // Fetch OSM relation for the city
+                try {
+                    const searchUrl = `https://nominatim.openstreetmap.org/search?city=${encodeURIComponent(cityName)}&country=Spain&format=json&limit=1`;
+                    console.log(`[updateCityOverlays] Fetching search:`, searchUrl);
+                    const searchRes = await fetch(searchUrl);
+                    const searchData = await searchRes.json();
+                    console.log(`[updateCityOverlays] Search data for ${cityName}:`, searchData);
+                    if (!searchData[0]) {
+                        console.warn(`[updateCityOverlays] No search result for city: ${cityName}`);
+                        continue;
+                    }
+                    const osmType = searchData[0].osm_type;
+                    const osmId = searchData[0].osm_id;
+                    if (osmType !== 'relation') {
+                        console.warn(`[updateCityOverlays] OSM type is not relation for city: ${cityName}`);
+                        continue;
+                    }
+                    // Fetch boundary GeoJSON
+                    const lookupUrl = `https://nominatim.openstreetmap.org/lookup?osm_ids=R${osmId}&format=json&polygon_geojson=1`;
+                    console.log(`[updateCityOverlays] Fetching lookup:`, lookupUrl);
+                    const lookupRes = await fetch(lookupUrl);
+                    const lookupData = await lookupRes.json();
+                    console.log(`[updateCityOverlays] Lookup data for ${cityName}:`, lookupData);
+                    if (!lookupData[0] || !lookupData[0].geojson) {
+                        console.warn(`[updateCityOverlays] No geojson found for city: ${cityName}`);
+                        continue;
+                    }
+                    geojson = lookupData[0].geojson;
+                    cityBoundaryCache[cityName] = geojson;
+                } catch (e) {
+                    console.warn(`[updateCityOverlays] Failed to fetch boundary for ${cityName}:`, e);
+                    continue;
+                }
+            }
+            // Draw boundary
+            try {
+                const layer = L.geoJSON(geojson, {
+                    style: {
+                        color: '#EA682F',
+                        weight: 3,
+                        fillColor: '#EA682F',
+                        fillOpacity: 0.15
+                    }
+                }).addTo(this.map);
+                cityBoundaryLayers[cityName] = layer;
+                console.log(`[updateCityOverlays] Added boundary for city: ${cityName}`);
+            } catch (e) {
+                console.warn(`[updateCityOverlays] Error drawing boundary for ${cityName}:`, e);
+            }
+        }
+        // Add grayscale class if any city is selected
+        const mapContainer = document.getElementById('map');
+        if (mapContainer) {
+            if (cityNames.length > 0) {
+                mapContainer.classList.add('city-selected');
+            } else {
+                mapContainer.classList.remove('city-selected');
+            }
+        }
     }
 
     getRandomSpainCoordinates() {
@@ -526,13 +659,11 @@ class SearchByMap {
 
     async loadProperties(page = 1) {
         if (this.isLoading) {
-            console.log('Properties are already loading, skipping request');
             return;
         }
 
         this.isLoading = true;
         this.currentPage = page;
-        console.log('Loading properties, page:', page);
         
         try {
             // Show loader
@@ -597,7 +728,6 @@ class SearchByMap {
             if (globalFilters.sortOrder && globalFilters.sortOrder !== 'default') params.set('SortOrder', globalFilters.sortOrder);
 
             const apiUrl = `${this.config.apiUrl}?${params.toString()}`;
-            console.log('API URL:', apiUrl);
 
             const response = await fetch(apiUrl, {
                 method: 'GET',
@@ -661,16 +791,23 @@ class SearchByMap {
 
             // Create a key for the coordinate
             const coordKey = `${latitude.toFixed(6)},${longitude.toFixed(6)}`;
+            const propertyKey = `${property.reference}-${coordKey}`;
 
-            // Get the count of properties at this coordinate
-            const count = coordinateMap.get(coordKey) || 0;
-            coordinateMap.set(coordKey, count + 1);
-
-            // Add a small random offset to markers at the same location
-            const offset = count > 0 ? {
-                lat: (Math.random() - 0.5) * 0.015,
-                lng: (Math.random() - 0.5) * 0.015
-            } : { lat: 0, lng: 0 };
+            // Get or create offset for this property
+            let offset;
+            if (this.propertyOffsets.has(propertyKey)) {
+                offset = this.propertyOffsets.get(propertyKey);
+            } else {
+                // Get the count of properties at this coordinate
+                const count = coordinateMap.get(coordKey) || 0;
+                coordinateMap.set(coordKey, count + 1);
+                
+                // Generate new offset
+                offset = count > 0 ? deterministicOffset(property.reference, count) : { lat: 0, lng: 0 };
+                
+                // Store the offset
+                this.propertyOffsets.set(propertyKey, offset);
+            }
 
             // Create marker with validated coordinates and offset
             const markerLatLng = [latitude + offset.lat, longitude + offset.lng];
@@ -697,7 +834,7 @@ class SearchByMap {
                 isFeatured: false,
                 isNew: false,
                 isReduced: false,
-                url: property.propertyUrl // Use the URL directly from the API response
+                url: property.propertyUrl
             };
         });
     }
@@ -1070,7 +1207,6 @@ class SearchByMap {
         window.history.pushState({}, '', newUrl);
         
         // Log the updated URL for debugging
-        console.log('Updated URL:', newUrl);
     }
 
     setupEventListeners() {
@@ -1231,7 +1367,6 @@ class SearchByMap {
                                 enableMapMovement();
                             }
                         } else {
-                            console.log('Cities in view did not change, skipping API call.');
                         }
                     }, 500);
                 });
@@ -1313,9 +1448,17 @@ class SearchByMap {
                 locationFilter.value = 'Málaga';
                 globalFilters.location = 'Málaga';
                 
+                // Add initial city overlay
+                this.updateCityOverlays(Array.isArray(globalFilters.location) ? globalFilters.location : [globalFilters.location]);
+                
                 locationFilter.addEventListener('change', (e) => {
                     // Only allow single location selection
-                    globalFilters.location = e.target.value;
+                    const newLocation = e.target.value;
+                    globalFilters.location = newLocation;
+                    
+                    // Update city overlay
+                    this.updateCityOverlays(Array.isArray(globalFilters.location) ? globalFilters.location : [globalFilters.location]);
+                    
                     this.updateUrlWithFilters();
                     this.loadProperties(1);
                 });
@@ -1676,21 +1819,18 @@ class SearchByMap {
 
     initializeFiltersFromUrl() {
         const urlParams = new URLSearchParams(window.location.search);
-        console.log('URL Parameters:', Object.fromEntries(urlParams.entries()));
 
         // Location - ensure single selection
         if (urlParams.has('Location')) {
             const locationFilter = document.querySelector('.location-filter');
             if (locationFilter) {
                 const locationValue = urlParams.get('Location');
-                console.log('Setting location from URL:', locationValue);
                 locationFilter.value = locationValue;
                 globalFilters.location = locationValue;
                 
                 // Find and check the corresponding checkbox
                 const locationCheckbox = document.querySelector(`input[name="location"][value="${locationValue}"]`);
                 if (locationCheckbox) {
-                    console.log('Checking location checkbox:', locationValue);
                     locationCheckbox.checked = true;
                 }
             }
@@ -1698,14 +1838,12 @@ class SearchByMap {
             // If no location in URL, set to Málaga
             const locationFilter = document.querySelector('.location-filter');
             if (locationFilter) {
-                console.log('Setting default location to Málaga');
                 locationFilter.value = 'Málaga';
                 globalFilters.location = 'Málaga';
                 
                 // Find and check the Málaga checkbox
                 const malagaCheckbox = document.querySelector('input[name="location"][value="Málaga"]');
                 if (malagaCheckbox) {
-                    console.log('Checking Málaga checkbox');
                     malagaCheckbox.checked = true;
                 }
             }
@@ -1831,6 +1969,9 @@ class SearchByMap {
                 }
             }
         }
+
+        // After setting location from URL, update overlays
+        this.updateCityOverlays(Array.isArray(globalFilters.location) ? globalFilters.location : [globalFilters.location]);
     }
 
     showTooltip(content, latlng) {
@@ -1962,7 +2103,7 @@ class SearchByMap {
         return `
             <div class="property-popup">
                 <div class="property-popup-image">
-                    <img src="${property.image || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJYAAABkCAYAAABkW8nwAAADT0lEQVR4Xu3YQU7CQBSG0XGp7H8DrpCNa5eq/02wsjQx4QpC9c17OQmJ0unfb+bo9PV6vV78IUAYFIG1YNWozHvDClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClYFwePx+Lher7/fx+PxOJ/Ph+l0Os1F3O/3r7Omy+UyXK/X6/CZsra/XWvZeF6/rP94/qM1/e/7/Ot+wSrgTZhms9nw4+1q7bgnCxez2exrzcVi8XXdcv0E5AlitVp9rpv3W87Pt46X+zn2/MVehnVk0O/WPs5tdGtbXnc4HIbj8TgcDofher3efq3b+Xa7/XrNL2HL9e12O6xWq2GxWAy73W5YLpfDdrud9z3fb7fbzTDn80fn73a7+eVlYO33+3lfz3uez/lfr9f5pbfdbo9sfHjNYR1G9O0Fx+PxDGGCNCFYLpc3GOv1+lwul8NmsxlWq9Xw1xdYp9NpnguWPM+r2+12eP5Tul6v77jSrfn4sF68ElgvBjVfbkKRbnM8Hm8T0m1Sw1mv13fPV/bFVXq+cnVzeZ5X18O+5ytX+m5+7/zFtubLX3uB9SJiy7DNbdKJpvssp/V6vTxDmVCdz+fheUwp44Qzoys/oa7n13KiOU8jXZ2S5/yEK/ub+8n+Jp7Zmwxr7Xcez7vdb8B6AdCEJZPp9Xo9j++5+ix3mzRXnqTZZwYp3S3jl0FJjrtdLWOYIc1+Jqoz7HStPM+wbTabO9Tp9DLeSfdaXveEMVP6dNF0w+xnhnb+Z4vbvvK5+f/5y7hXwfqJVH6Xplvk9yn5QZlhffcFMzaV0clnc9c8Y5ZBzYhm/DK26ULpZrnOrGy9Xs/rmzV1a8v6dL90yQxtnmeks9cM6YxpdrfcXf6tOhPzHGn282x/P3HmtWsAlnEUKMACq0igMNqOBaygBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURof9AXTSRXwu84FQAAAAAElFTkSuQmCC'}" alt="${property.title}">
+                    <img src="${property.image || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJYAAABkCAYAAABkW8nwAAADT0lEQVR4Xu3YQU7CQBSG0XGp7H8DrpCNa5eq/02wsjQx4QpC9c17OQmJ0unfb+bo9PV6vV78IUAYFIG1YNWozHvDClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClaFQGF02LAKWsAKVoVAYXTYsApawApWhUBhdNiwClrAClYFwePx+Lher7/fx+PxOJ/Ph+l0Os1F3O/3r7Omy+UyXK/X6/CZsra/XWvZeF6/rP94/qM1/e/7/Ot+wSrgTZhms9nw4+1q7bgnCxez2exrzcVi8XXdcv0E5AlitVp9rpv3W87Pt46X+zn2/MVehnVk0O/WPs5tdGtbXnc4HIbj8TgcDofher3efq3b+Xa7/XrNL2HL9e12O6xWq2GxWAy73W5YLpfDdrud9z3fb7fbzTDn80fn73a7+eVlYO33+3lfz3uez/lfr9f5pbfdbo9sfHjNYR1G9O0Fx+PxDGGCNCFYLpc3GOv1+lwul8NmsxlWq9Xw1xdYp9NpnguWPM+r2+12eP5Tul6v77jSrfn4sF68ElgvBjVfbkKRbnM8Hm8T0m1Sw1mv13fPV/bFVXq+cnVzeZ5X18O+5ytX+m5+7/zFtubLX3uB9SJiy7DNbdKJpvssp/V6vTxDmVCdz+fheUwp44Qzoys/oa7n13KiOU8jXZ2S5/yEK/ub+8n+Jp7Zmwxr7Xcez7vdb8B6AdCEJZPp9Xo9j++5+ix3mzRXnqTZZwYp3S3jl0FJjrtdLWOYIc1+Jqoz7HStPM+wbTabO9Tp9DLeSfdaXveEMVP6dNF0w+xnhnb+Z4vbvvK5+f/5y7hXwfqJVH6Xplvk9yn5QZlhffcFMzaV0clnc9c8Y5ZBzYhm/DK26ULpZrnOrGy9Xs/rmzV1a8v6dL90yQxtnmeks9cM6YxpdrfcXf6tOhPzHGn282x/P3HmtWsAlnEUKMACq0igMNqOBaygBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURocNq6AFrGBVCBRGhw2roAWsYFUIFEaHDaugBaxgVQgURof9AXTSRXwu84FQAAAAAElFTkSuQmCC'}" alt="${property.title}">
                 </div>
                 <div class="property-popup-content">
                     <div class="price">${this.formatPrice(property.price)}</div>
@@ -2095,13 +2236,11 @@ class SearchByMap {
     updateSelectedText(filterType) {
         const select = document.querySelector(`.custom-select[data-filter="${filterType}"]`);
         if (!select) {
-            console.log(`Select element not found for filter type: ${filterType}`);
             return;
         }
         
         const selectedTextElement = select.querySelector('.selected-text');
         if (!selectedTextElement) {
-            console.log(`Selected text element not found for filter type: ${filterType}`);
             return;
         }
         
@@ -2243,6 +2382,9 @@ class SearchByMap {
         this.updateUrlWithFilters();
         // Use debounced version to prevent double loading
         this.debouncedLoadProperties(1);
+
+        // Remove city overlay
+        this.removeCityOverlay();
     }
 
     debouncedCheckVisibleCities() {
@@ -2280,40 +2422,32 @@ class SearchByMap {
 
     updateFiltersFromVisibleCities() {
         if (this.visibleCities.size === 0 || this.isMapUpdating) return;
-        
         // Set updating state
         this.isMapUpdating = true;
-        
         // If only one city is visible, update the location filter
         if (this.visibleCities.size === 1) {
             const visibleCity = Array.from(this.visibleCities)[0];
-            
-            // Only update if the location filter doesn't already match
             if (globalFilters.location !== visibleCity) {
-                // Update the location filter
                 globalFilters.location = visibleCity;
-                
-                // Update the UI
                 const locationFilter = document.querySelector('.location-filter');
                 if (locationFilter) {
                     locationFilter.value = visibleCity;
                 }
-                
-                // Update checkboxes
                 document.querySelectorAll('input[name="location"]').forEach(cb => {
                     cb.checked = cb.value === visibleCity;
                 });
-                
-                // Update URL parameters (without reloading properties)
                 this.updateUrlWithFilters();
             }
+        } else if (this.visibleCities.size > 1) {
+            // If multiple cities are visible, set location to array
+            globalFilters.location = Array.from(this.visibleCities);
+            this.updateUrlWithFilters();
         }
-        
-        // Reset updating state after a short delay
+        // Always update overlays to match current location filter
+        this.updateCityOverlays(Array.isArray(globalFilters.location) ? globalFilters.location : [globalFilters.location]);
         setTimeout(() => {
             this.isMapUpdating = false;
         }, 200);
-        
         this.updateSelectedText('location');
     }
 
@@ -2483,21 +2617,18 @@ class PropertyFilters {
 
     loadFiltersFromUrl() {
         const urlParams = new URLSearchParams(window.location.search);
-        console.log('Loading filters from URL:', Object.fromEntries(urlParams.entries()));
 
         // Location - ensure single selection
         if (urlParams.has('Location')) {
             const locationFilter = document.querySelector('.location-filter');
             if (locationFilter) {
                 const locationValue = urlParams.get('Location');
-                console.log('Setting location from URL:', locationValue);
                 locationFilter.value = locationValue;
                 globalFilters.location = locationValue;
                 
                 // Find and check the corresponding checkbox
                 const locationCheckbox = document.querySelector(`input[name="location"][value="${locationValue}"]`);
                 if (locationCheckbox) {
-                    console.log('Checking location checkbox:', locationValue);
                     locationCheckbox.checked = true;
                 }
             }
@@ -2505,14 +2636,12 @@ class PropertyFilters {
             // If no location in URL, set to Málaga
             const locationFilter = document.querySelector('.location-filter');
             if (locationFilter) {
-                console.log('Setting default location to Málaga');
                 locationFilter.value = 'Málaga';
                 globalFilters.location = 'Málaga';
                 
                 // Find and check the Málaga checkbox
                 const malagaCheckbox = document.querySelector('input[name="location"][value="Málaga"]');
                 if (malagaCheckbox) {
-                    console.log('Checking Málaga checkbox');
                     malagaCheckbox.checked = true;
                 }
             }
@@ -2933,6 +3062,13 @@ class PropertyFilters {
 // Initialize the map when the DOM is loaded
 document.addEventListener('DOMContentLoaded', async () => {
     try {
+        // On first load, if no PMin in URL, add it
+        const urlParams = new URLSearchParams(window.location.search);
+        if (!urlParams.has('PMin')) {
+            urlParams.set('PMin', '250000');
+            const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
+            window.history.replaceState({}, '', newUrl);
+        }
         // Initialize only if not already initialized
         if (!window.searchByMap) {
             window.searchByMap = new SearchByMap();
@@ -3088,4 +3224,42 @@ function arraysEqual(a, b) {
         if (sortedA[i] !== sortedB[i]) return false;
     }
     return true;
+}
+
+function deterministicOffset(reference, count) {
+    // Simple hash: sum char codes + count, mod a range
+    let hash = 0;
+    for (let i = 0; i < reference.length; i++) {
+        hash += reference.charCodeAt(i);
+    }
+    hash += count * 31;
+    // Use hash to get a value between -0.005 and 0.005
+    const lat = ((hash % 1000) / 1000 - 0.5) * 0.010;
+    const lng = (((hash * 7) % 1000) / 1000 - 0.5) * 0.010;
+    return { lat, lng };
+}
+
+async function fetchAndDrawBoundary(cityName, map) {
+    // 1. Search for the city
+    const searchUrl = `https://nominatim.openstreetmap.org/search?city=${encodeURIComponent(cityName)}&country=Spain&format=jsonv2&limit=1`;
+    const searchRes = await fetch(searchUrl);
+    const searchData = await searchRes.json();
+    if (!searchData[0] || searchData[0].osm_type !== 'relation') return;
+
+    // 2. Fetch the boundary GeoJSON
+    const osmId = searchData[0].osm_id;
+    const lookupUrl = `https://nominatim.openstreetmap.org/lookup?osm_ids=R${osmId}&format=jsonv2&polygon_geojson=1`;
+    const lookupRes = await fetch(lookupUrl);
+    const lookupData = await lookupRes.json();
+    if (!lookupData[0] || !lookupData[0].geojson) return;
+
+    // 3. Draw on the map
+    L.geoJSON(lookupData[0].geojson, {
+        style: {
+            color: '#EA682F', // orange outline
+            weight: 3,
+            fillColor: '#EA682F',
+            fillOpacity: 0.15
+        }
+    }).addTo(map);
 }
